@@ -1,0 +1,16 @@
+# COMPASS — local demo stack. The Supabase project stays hosted (free
+# tier); only the SPA is containerized, which is what a judge demo
+# needs: `docker compose up --build` → http://localhost:8080
+#
+# Copy .env to .env.docker (or export the two variables) before
+# building — Vite bakes them in at build time.
+services:
+  web:
+    build:
+      context: .
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-http://localhost:54321}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-placeholder-anon-key}
+    ports:
+      - "8080:80"
+    restart: unless-stopped

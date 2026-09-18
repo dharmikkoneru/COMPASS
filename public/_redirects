@@ -1,0 +1,4 @@
+# Netlify SPA fallback: serve index.html for every route so client-side
+# routing (React Router) owns deep links like /login, /materials, /quiz/:id.
+# Without this, refreshing on any non-root path returns Netlify's 404.
+/*    /index.html    200

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>COMPASS — Project Walkthrough</title>
+<style>
+  :root {
+    --bg: #0b0b1c;
+    --panel: rgba(255, 255, 255, 0.045);
+    --edge: rgba(255, 255, 255, 0.1);
+    --ink: #f0f0fa;
+    --dim: #9d9dc4;
+    --violet: #7c3aed;
+    --indigo: #818cf8;
+    --cyan: #22d3ee;
+    --magenta: #e879f9;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #fb7185;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 60% 45% at 12% 0%, rgba(124, 58, 237, 0.28), transparent 62%),
+      radial-gradient(ellipse 45% 38% at 88% 6%, rgba(217, 70, 239, 0.14), transparent 65%),
+      radial-gradient(ellipse 55% 42% at 85% 100%, rgba(34, 211, 238, 0.16), transparent 60%),
+      radial-gradient(ellipse 40% 35% at 0% 100%, rgba(99, 102, 241, 0.12), transparent 65%);
+    background-attachment: fixed;
+    color: var(--ink);
+    overflow: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(148, 163, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 255, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 78%);
+    mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 78%);
+  }
+
+  #stage { position: relative; z-index: 1; height: 100vh; display: flex; flex-direction: column; }
+
+  /* progress bar */
+  #bar { height: 4px; background: rgba(255,255,255,0.07); flex: none; }
+  #bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #67e8f9, #a78bfa 55%, #e879f9); }
+
+  /* control bar */
+  #controls {
+    flex: none; display: flex; align-items: center; gap: 14px;
+    padding: 10px 18px; background: rgba(10, 10, 26, 0.55);
+    border-bottom: 1px solid var(--edge); backdrop-filter: blur(10px);
+    font-size: 13px; color: var(--dim);
+  }
+  #controls button {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 14px; line-height: 1;
+  }
+  #controls button:hover { background: rgba(255,255,255,0.1); }
+  #dots { display: flex; gap: 6px; margin-left: auto; }
+  #dots b { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.18); cursor: pointer; }
+  #dots b.on { background: var(--cyan); box-shadow: 0 0 8px rgba(34,211,238,0.8); }
+  #clock { font-variant-numeric: tabular-nums; }
+
+  /* scenes */
+  #viewport { position: relative; flex: 1; }
+  .scene {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 48px 64px 72px; gap: 18px;
+    opacity: 0; visibility: hidden; transform: translateY(16px);
+    transition: opacity .55s ease, transform .55s ease, visibility 0s linear .55s;
+  }
+  .scene.active { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+
+  .kicker {
+    font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .kicker::before, .kicker::after { content: ""; width: 34px; height: 1px; background: var(--edge); }
+  h1 { font-size: clamp(40px, 6vw, 72px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+  h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.02em; }
+  .grad {
+    background-image: linear-gradient(90deg, #67e8f9, #a78bfa 55%, #e879f9);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--dim); font-size: clamp(15px, 1.6vw, 19px); max-width: 860px; line-height: 1.55; }
+  .small { color: var(--dim); font-size: 13px; }
+
+  /* staggered reveal */
+  .rev { opacity: 0; transform: translateY(14px); }
+  .scene.active .rev { animation: rise .6s cubic-bezier(.2,.7,.3,1) forwards; animation-delay: var(--d, 0s); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  /* generic card grid */
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
+    padding: 18px 20px; width: 250px; text-align: left; backdrop-filter: blur(12px);
+  }
+  .card h4 { font-size: 15px; margin-bottom: 6px; }
+  .card p { font-size: 13px; color: var(--dim); line-height: 1.5; }
+  .card .ico { font-size: 22px; display: block; margin-bottom: 8px; }
+
+  /* big number stats */
+  .stats { display: flex; gap: 22px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  .stat { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 20px 28px; min-width: 170px; backdrop-filter: blur(12px); }
+  .stat b { display: block; font-size: 40px; font-weight: 800; line-height: 1.1; }
+  .stat span { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+
+  /* flow diagram */
+  .flow { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+  .fnode {
+    background: var(--panel); border: 1px solid var(--edge); border-radius: 14px;
+    padding: 16px 22px; min-width: 170px; backdrop-filter: blur(12px);
+  }
+  .fnode b { display: block; font-size: 17px; letter-spacing: 0.06em; }
+  .fnode span { font-size: 12px; color: var(--dim); display: block; margin-top: 4px; line-height: 1.45; }
+  .fnode.v { border-color: rgba(124,58,237,0.65); box-shadow: 0 0 18px rgba(124,58,237,0.25); }
+  .fnode.c { border-color: rgba(34,211,238,0.55); box-shadow: 0 0 18px rgba(34,211,238,0.18); }
+  .fnode.m { border-color: rgba(232,121,249,0.5); box-shadow: 0 0 18px rgba(232,121,249,0.18); }
+  .arrow { color: var(--cyan); font-size: 22px; animation: nudge 1.4s ease-in-out infinite; }
+  @keyframes nudge { 0%,100% { transform: translateX(0); opacity: .7; } 50% { transform: translateX(6px); opacity: 1; } }
+
+  /* mastery bars */
+  .bars { width: min(680px, 86vw); display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+  .brow { text-align: left; }
+  .brow .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--dim); margin-bottom: 5px; }
+  .brow .lbl b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .track { height: 10px; border-radius: 6px; background: rgba(255,255,255,0.07); overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 6px; }
+  .scene.active .fill { animation: grow 1.1s cubic-bezier(.2,.7,.3,1) forwards; animation-delay: var(--d, 0s); }
+  @keyframes grow { to { width: var(--w); } }
+
+  /* mock browser window */
+  .mock {
+    width: min(860px, 90vw); background: rgba(13,13,30,0.8); border: 1px solid var(--edge);
+    border-radius: 14px; overflow: hidden; backdrop-filter: blur(14px); text-align: left;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  }
+  .mock .bar { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--edge); background: rgba(255,255,255,0.03); }
+  .mock .bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.16); }
+  .mock .body { padding: 22px 26px; display: flex; gap: 26px; align-items: center; }
+  .mock .col { flex: 1; }
+
+  /* quiz mock */
+  .opt {
+    display: block; border: 1px solid var(--edge); border-radius: 10px;
+    padding: 10px 14px; margin-top: 8px; font-size: 13.5px; color: var(--dim);
+  }
+  .opt.pick { border-color: rgba(124,58,237,0.8); background: rgba(124,58,237,0.16); color: var(--ink); }
+  .opt.good { border-color: rgba(74,222,128,0.6); background: rgba(74,222,128,0.1); }
+
+  /* architecture columns */
+  .arch { display: flex; gap: 14px; align-items: stretch; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+  .acol { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 16px 18px; width: 240px; text-align: left; backdrop-filter: blur(12px); }
+  .acol h5 { font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cyan); margin-bottom: 10px; }
+  .acol li { list-style: none; font-size: 13px; color: var(--dim); padding: 5px 0; border-bottom: 1px dashed rgba(255,255,255,0.07); }
+  .acol li:last-child { border-bottom: 0; }
+  .acol li b { color: var(--ink); font-weight: 600; }
+  .varrow { color: var(--dim); font-size: 18px; align-self: center; }
+
+  /* radar */
+  #radar polygon.data { transform-origin: 200px 190px; transform: scale(0); }
+  .scene.active #radar polygon.data { animation: bloom 1.2s .5s cubic-bezier(.2,.7,.3,1) forwards; }
+  @keyframes bloom { to { transform: scale(1); } }
+
+  /* checklist */
+  .checks { display: grid; grid-template-columns: repeat(2, minmax(280px, 340px)); gap: 10px 26px; margin-top: 10px; text-align: left; }
+  .checks div { font-size: 14px; color: var(--dim); padding-left: 26px; position: relative; line-height: 1.5; }
+  .checks div::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+  .checks div b { color: var(--ink); }
+
+  #hint { position: fixed; right: 14px; bottom: 12px; font-size: 11.5px; color: rgba(157,157,196,0.75); z-index: 5; }
+
+  /* Recording mode (?once=1): play straight through, hide chrome, keep the
+     thin progress bar so the rendered video looks clean. */
+  body.rec #controls, body.rec #hint { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bar"><i></i></div>
+
+  <div id="controls">
+    <button id="prev" title="Previous scene">⏮</button>
+    <button id="toggle" title="Play / pause">⏸</button>
+    <button id="next" title="Next scene">⏭</button>
+    <button id="restart" title="Restart">⟲</button>
+    <span id="clock">0:00 / 0:00</span>
+    <span id="sceneName" style="color:var(--ink)"></span>
+    <div id="dots"></div>
+  </div>
+
+  <div id="viewport">
+
+    <!-- 1 · TITLE -->
+    <section class="scene" data-dur="9000" data-name="Title">
+      <p class="kicker rev">Smart India Hackathon 2026 · SIH26101</p>
+      <h1 class="rev" style="--d:.15s">COMPASS <span class="grad">Platform</span></h1>
+      <p class="sub rev" style="--d:.35s">AI-powered competency assessment &amp; training navigation
+        for India's Official Statistical System — <b style="color:var(--ink)">MoSPI</b> officers.</p>
+      <div class="stats rev" style="--d:.55s">
+        <div class="stat"><b class="grad">Assess</b><span>AI quizzes from material</span></div>
+        <div class="stat"><b class="grad">Diagnose</b><span>8-competency mastery</span></div>
+        <div class="stat"><b class="grad">Train</b><span>iGOT Karmayogi courses</span></div>
+      </div>
+      <p class="small rev" style="--d:.8s">Ministry of Statistics &amp; Programme Implementation · Smart Education theme</p>
+    </section>
+
+    <!-- 2 · PROBLEM -->
+    <section class="scene" data-dur="11000" data-name="The problem">
+      <p class="kicker rev">The problem</p>
+      <h2 class="rev" style="--d:.1s">Training exists. <span class="grad">Direction doesn't.</span></h2>
+      <p class="sub rev" style="--d:.25s">Statistical officers take courses on iGOT Karmayogi, but nothing tells them
+        <b style="color:var(--ink)">which</b> skills they're weak in or <b style="color:var(--ink)">which</b> course closes that gap.</p>
+      <div class="cards">
+        <div class="card rev" style="--d:.4s"><span class="ico">🎯</span><h4>No diagnosis</h4><p>Competency gaps in survey methodology, sampling, data quality are invisible — training is guesswork.</p></div>
+        <div class="card rev" style="--d:.55s"><span class="ico">🌊</span><h4>Course ocean</h4><p>Hundreds of iGOT courses, no mapping to an officer's actual role or weaknesses.</p></div>
+        <div class="card rev" style="--d:.7s"><span class="ico">📉</span><h4>No measurement</h4><p>Departments can't see readiness across competencies, so training budgets aren't targeted.</p></div>
+      </div>
+    </section>
+
+    <!-- 3 · THE LOOP -->
+    <section class="scene" data-dur="12000" data-name="The workflow">
+      <p class="kicker rev">The core workflow</p>
+      <h2 class="rev" style="--d:.1s">One loop: <span class="grad">assess → diagnose → train</span></h2>
+      <div class="flow">
+        <div class="fnode v rev" style="--d:.3s"><b>1 · UPLOAD</b><span>Officer pastes or uploads training material (PDF / text)</span></div>
+        <span class="arrow rev" style="--d:.45s">➜</span>
+        <div class="fnode v rev" style="--d:.5s"><b>2 · GENERATE</b><span>Edge function calls Gemini → MCQs tagged by competency</span></div>
+        <span class="arrow rev" style="--d:.65s">➜</span>
+        <div class="fnode c rev" style="--d:.7s"><b>3 · ATTEMPT</b><span>Officer takes the quiz; answers scored per competency</span></div>
+        <span class="arrow rev" style="--d:.85s">➜</span>
+        <div class="fnode c rev" style="--d:.9s"><b>4 · MASTERY</b><span>RPC blends scores into a living competency profile</span></div>
+        <span class="arrow rev" style="--d:1.05s">➜</span>
+        <div class="fnode m rev" style="--d:1.1s"><b>5 · TRAIN</b><span>Gaps query iGOT → ranked recommendations → enroll</span></div>
+      </div>
+      <p class="small rev" style="--d:1.35s">Every quiz makes the profile sharper — the loop compounds.</p>
+    </section>
+
+    <!-- 4 · GENERATE -->
+    <section class="scene" data-dur="13000" data-name="AI quiz generation">
+      <p class="kicker rev">Workflow · step 1–2</p>
+      <h2 class="rev" style="--d:.1s">From raw material to a <span class="grad">tagged quiz</span> in ~20 seconds</h2>
+      <div class="mock rev" style="--d:.3s">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="body">
+          <div class="col">
+            <p style="font-size:13px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Learning material</p>
+            <p style="font-size:14px;line-height:1.6">"Pasted material — 1.8k chars on survey methodology, sampling techniques, data quality &amp; validation…"</p>
+            <p style="margin-top:12px"><span class="opt pick" style="display:inline-block">Generate AI quiz · 5 questions · Medium</span></p>
+          </div>
+          <div class="col">
+            <p style="font-size:13px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Gemini → Supabase</p>
+            <p style="font-size:13.5px;line-height:1.7">
+              ✓ JSON-schema constrained output<br>
+              ✓ difficulty + <b style="color:var(--cyan)">competency tag</b> per question<br>
+              ✓ explanation stored for every answer<br>
+              ✓ retry across 6 models, enforced deadline
+            </p>
+          </div>
+        </div>
+      </div>
+      <p class="small rev" style="--d:.6s">Deno edge function · model fallback chain · rollback-safe writes</p>
+    </section>
+
+    <!-- 5 · QUIZ -->
+    <section class="scene" data-dur="11000" data-name="Taking a quiz">
+      <p class="kicker rev">Workflow · step 3</p>
+      <h2 class="rev" style="--d:.1s">Every answer is <span class="grad">evidence</span></h2>
+      <div class="mock rev" style="--d:.3s">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="body">
+          <div class="col">
+            <p style="font-size:12px;color:var(--dim)">Question 2 of 5 · <b style="color:var(--cyan)">SAMPLING</b></p>
+            <p style="font-size:15px;margin-top:8px;line-height:1.5">What disadvantage of Simple Random Sampling is mentioned in the text?</p>
+            <span class="opt">A) It prevents equal chance of selection</span>
+            <span class="opt pick">C) It can miss minority subgroups ✓</span>
+            <span class="opt">D) More expensive than a census</span>
+          </div>
+          <div class="col">
+            <p style="font-size:13px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">After submit — review &amp; explanations</p>
+            <p style="font-size:13.5px;line-height:1.7">
+              ✓ score + per-competency breakdown<br>
+              ✓ <b style="color:var(--ink)">your answer vs the correct one</b><br>
+              ✓ the AI's justification for each question<br>
+              ✓ one click → retake or dashboard
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · MASTERY -->
+    <section class="scene" data-dur="13000" data-name="Mastery engine">
+      <p class="kicker rev">Workflow · step 4</p>
+      <h2 class="rev" style="--d:.1s">The mastery engine — <span class="grad">measured, not vibes</span></h2>
+      <p class="sub rev" style="--d:.2s">A Postgres RPC scores each quiz per competency. First attempt uses a conservative 40% prior;
+        repeats blend <b style="color:var(--ink)">60% history + 40% latest evidence</b>.</p>
+      <div class="bars">
+        <div class="brow rev" style="--d:.4s"><div class="lbl"><span>First quiz · Survey Methodology</span><b>40%</b></div><div class="track"><i class="fill" style="--w:40%;--d:.5s;background:linear-gradient(90deg,#7c3aed,#818cf8)"></i></div></div>
+        <div class="brow rev" style="--d:.7s"><div class="lbl"><span>Second quiz, 100% score → 0.6×40 + 0.4×100</span><b>64%</b></div><div class="track"><i class="fill" style="--w:64%;--d:.8s;background:linear-gradient(90deg,#818cf8,#22d3ee)"></i></div></div>
+        <div class="brow rev" style="--d:1s"><div class="lbl"><span>Overall readiness = mean across 8 competencies</span><b>24%</b></div><div class="track"><i class="fill" style="--w:24%;--d:1.1s;background:linear-gradient(90deg,#22d3ee,#4ade80)"></i></div></div>
+      </div>
+      <p class="small rev" style="--d:1.3s">These are the real numbers from the live verified session — the DB and dashboard agree exactly.</p>
+    </section>
+
+    <!-- 7 · DASHBOARD -->
+    <section class="scene" data-dur="12000" data-name="Command dashboard">
+      <p class="kicker rev">The product · officer view</p>
+      <h2 class="rev" style="--d:.1s">A <span class="grad">mission-control</span> dashboard</h2>
+      <div class="mock rev" style="--d:.3s">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="body">
+          <div class="col" style="max-width:340px">
+            <svg id="radar" width="340" height="330" viewBox="0 0 400 380" style="max-width:100%;height:auto">
+              <g stroke="rgba(148,163,255,0.18)" fill="none">
+                <polygon points="200,50 299,91 340,190 299,289 200,330 101,289 60,190 101,91"/>
+                <polygon points="200,85 274,116 305,190 274,264 200,295 126,264 95,190 126,116"/>
+                <polygon points="200,120 250,140 270,190 250,240 200,260 150,240 130,190 150,140"/>
+                <polygon points="200,155 225,165 235,190 225,215 200,225 175,215 165,190 175,165"/>
+                <line x1="200" y1="190" x2="200" y2="50"/><line x1="200" y1="190" x2="299" y2="91"/>
+                <line x1="200" y1="190" x2="340" y2="190"/><line x1="200" y1="190" x2="299" y2="289"/>
+                <line x1="200" y1="190" x2="200" y2="330"/><line x1="200" y1="190" x2="101" y2="289"/>
+                <line x1="200" y1="190" x2="60" y2="190"/><line x1="200" y1="190" x2="101" y2="91"/>
+              </g>
+              <polygon class="data" points="200,100 263,127 200,190 263,253 200,190 200,190 200,190 200,190"
+                       fill="rgba(139,92,246,0.4)" stroke="#22d3ee" stroke-width="2"/>
+              <g fill="#c6c6e0" font-size="12" font-family="inherit" text-anchor="middle">
+                <text x="200" y="38">Survey Mgmt</text><text x="308" y="82">Sampling</text>
+                <text x="352" y="194">Field Ops</text><text x="308" y="302">Data Quality</text>
+                <text x="200" y="348">Stat Computing</text><text x="92" y="302">Data Indexing</text>
+                <text x="48" y="194">Official Stats</text><text x="92" y="82">Governance</text>
+              </g>
+            </svg>
+          </div>
+          <div class="col">
+            <p style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em">Overall readiness</p>
+            <p style="font-size:42px;font-weight:800" class="grad">24%</p>
+            <p style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin-top:10px">Identified gaps</p>
+            <p style="font-size:42px;font-weight:800;color:var(--red)">5</p>
+            <p style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin-top:10px">Top strength</p>
+            <p style="font-size:20px;font-weight:700;color:var(--cyan)">Survey Mgmt · 64%</p>
+            <p style="font-size:12px;color:var(--dim);margin-top:12px">+ attempt history with scores &amp; timestamps, radar inside the 60% ring = gap</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 · IGOT -->
+    <section class="scene" data-dur="11000" data-name="iGOT integration">
+      <p class="kicker rev">Workflow · step 5</p>
+      <h2 class="rev" style="--d:.1s">Gaps become <span class="grad">ranked courses</span></h2>
+      <div class="cards">
+        <div class="card rev" style="--d:.35s"><span class="ico">🏷️</span><h4>Tag-matched</h4><p>Courses are matched by competency tags against each officer's live gap list.</p></div>
+        <div class="card rev" style="--d:.5s"><span class="ico">⚖️</span><h4>Urgency-ranked</h4><p>Weakest competency first; ties broken by shortest course so officers get quick wins.</p></div>
+        <div class="card rev" style="--d:.65s"><span class="ico">🎓</span><h4>Enroll + track</h4><p>One click enrolls; recommendations persist per officer with an audit trail.</p></div>
+      </div>
+      <p class="sub rev" style="--d:.85s">The iGOT Karmayogi catalog is seeded into Postgres and refreshed by the adapter —
+        recommendations are generated <b style="color:var(--ink)">from your own quiz evidence</b>, not a static list.</p>
+    </section>
+
+    <!-- 9 · ADMIN -->
+    <section class="scene" data-dur="9000" data-name="Admin heatmap">
+      <p class="kicker rev">The product · administrator view</p>
+      <h2 class="rev" style="--d:.1s">Department readiness, <span class="grad">at a glance</span></h2>
+      <div class="mock rev" style="--d:.3s">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="body" style="display:block">
+          <p style="font-size:12px;color:var(--dim);margin-bottom:12px">Mean mastery · department × competency (admin-only page, guarded by RLS + role)</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr style="color:var(--dim)"><th style="text-align:left;padding:4px 8px">Department</th><th style="padding:4px">Survey</th><th style="padding:4px">Sampling</th><th style="padding:4px">Field Ops</th><th style="padding:4px">Data&nbsp;Quality</th><th style="padding:4px">Stat&nbsp;Comp</th></tr>
+            <tr><td style="padding:5px 8px">NSO Field Operations</td><td style="background:rgba(74,222,128,.5);text-align:center">64</td><td style="background:rgba(74,222,128,.5);text-align:center">64</td><td style="background:rgba(251,113,133,.35);text-align:center">0</td><td style="background:rgba(74,222,128,.5);text-align:center">64</td><td style="background:rgba(251,113,133,.35);text-align:center">0</td></tr>
+            <tr><td style="padding:5px 8px">NSO Data Processing</td><td style="background:rgba(251,191,36,.4);text-align:center">45</td><td style="background:rgba(251,113,133,.35);text-align:center">22</td><td style="background:rgba(251,113,133,.35);text-align:center">0</td><td style="background:rgba(251,191,36,.4);text-align:center">48</td><td style="background:rgba(251,191,36,.4);text-align:center">41</td></tr>
+            <tr><td style="padding:5px 8px">Computer Centre</td><td style="background:rgba(251,113,133,.35);text-align:center">18</td><td style="background:rgba(251,113,133,.35);text-align:center">0</td><td style="background:rgba(251,113,133,.35);text-align:center">0</td><td style="background:rgba(251,191,36,.4);text-align:center">52</td><td style="background:rgba(74,222,128,.5);text-align:center">71</td></tr>
+          </table>
+        </div>
+      </div>
+      <p class="small rev" style="--d:.55s">Sample data for illustration — the live heatmap aggregates real mastery rows per department.</p>
+    </section>
+
+    <!-- 10 · ARCHITECTURE -->
+    <section class="scene" data-dur="14000" data-name="Architecture">
+      <p class="kicker rev">Under the hood</p>
+      <h2 class="rev" style="--d:.1s">Boring where it should be, <span class="grad">smart where it counts</span></h2>
+      <div class="arch">
+        <div class="acol rev" style="--d:.3s">
+          <h5>Frontend · Netlify</h5>
+          <ul>
+            <li><b>React 19 + Vite</b> SPA</li>
+            <li>Recharts competency radar</li>
+            <li>Client-auth-guarded routes</li>
+            <li>Violet/cyan mission-control theme</li>
+          </ul>
+        </div>
+        <span class="varrow rev" style="--d:.4s">⇄</span>
+        <div class="acol rev" style="--d:.45s">
+          <h5>Supabase</h5>
+          <ul>
+            <li><b>Postgres</b> — 6 tables, FK cascades</li>
+            <li><b>RLS on every table</b> — own-rows only</li>
+            <li><b>apply_attempt RPC</b> — mastery math</li>
+            <li>Auth with auto-provisioned profiles</li>
+          </ul>
+        </div>
+        <span class="varrow rev" style="--d:.55s">⇄</span>
+        <div class="acol rev" style="--d:.6s">
+          <h5>AI &amp; data</h5>
+          <ul>
+            <li><b>Deno edge function</b> — quiz generator</li>
+            <li><b>Gemini</b> — schema-constrained MCQs</li>
+            <li>Retry chain + enforced deadline</li>
+            <li><b>iGOT catalog</b> — recommendation engine</li>
+          </ul>
+        </div>
+      </div>
+      <p class="small rev" style="--d:.85s">5 self-verifying SQL migrations · service-role key never leaves the server · anon key public by design, RLS is the gate</p>
+    </section>
+
+    <!-- 11 · RIGOR -->
+    <section class="scene" data-dur="12000" data-name="Engineering rigor">
+      <p class="kicker rev">How it was built</p>
+      <h2 class="rev" style="--d:.1s">Proven, not <span class="grad">assumed</span></h2>
+      <div class="checks">
+        <div class="rev" style="--d:.3s"><b>45 unit tests</b> — gap engine, mastery helpers, iGOT matcher, error mapping</div>
+        <div class="rev" style="--d:.42s"><b>End-to-end verified live</b> — generate → attempt → mastery → history</div>
+        <div class="rev" style="--d:.54s"><b>5 idempotent migrations</b>, each self-verifying on run</div>
+        <div class="rev" style="--d:.66s"><b>Real bug chain fixed</b> — RLS policy → model list → deadline → two SQL bugs</div>
+        <div class="rev" style="--d:.78s"><b>Truthful UI</b> — quiz counts derived from stored questions, never claimed</div>
+        <div class="rev" style="--d:.9s"><b>Mastery math cross-checked</b> — 40 → 64 → 24% agree in DB &amp; dashboard</div>
+      </div>
+      <p class="sub rev" style="--d:1.1s">Every failure mode we met now has a test, a guard, or a self-verifying migration.</p>
+    </section>
+
+    <!-- 12 · OUTRO -->
+    <section class="scene" data-dur="10000" data-name="Summary">
+      <p class="kicker rev">COMPASS Platform · SIH26101</p>
+      <h2 class="rev" style="--d:.1s">Assess. Diagnose. <span class="grad">Train.</span></h2>
+      <p class="sub rev" style="--d:.3s">A closed loop between what an officer knows, what the data proves,
+        and what they learn next — built on Supabase, Gemini, and iGOT Karmayogi.</p>
+      <div class="stats rev" style="--d:.5s">
+        <div class="stat"><b class="grad">8</b><span>competencies tracked</span></div>
+        <div class="stat"><b class="grad">~20s</b><span>material → tagged quiz</span></div>
+        <div class="stat"><b class="grad">45</b><span>tests passing</span></div>
+        <div class="stat"><b class="grad">100%</b><span>loop verified live</span></div>
+      </div>
+      <p class="small rev" style="--d:.75s">compassprototype2026.netlify.app · built for Smart India Hackathon 2026</p>
+    </section>
+
+  </div>
+  <div id="hint">▶ plays automatically · space = pause · ←/→ = scenes · Win+Alt+R to record as .mp4</div>
+</div>
+
+<script>
+  const scenes = [...document.querySelectorAll('.scene')];
+  const barFill = document.querySelector('#bar i');
+  const clock = document.getElementById('clock');
+  const sceneName = document.getElementById('sceneName');
+  const dotsWrap = document.getElementById('dots');
+  const toggleBtn = document.getElementById('toggle');
+  let idx = 0, playing = true, elapsedInScene = 0, last = performance.now();
+
+  scenes.forEach((s, i) => {
+    const d = document.createElement('b');
+    d.addEventListener('click', () => go(i));
+    dotsWrap.appendChild(d);
+  });
+  const dots = [...dotsWrap.children];
+  const total = scenes.reduce((a, s) => a + +s.dataset.dur, 0);
+
+  const fmt = (ms) => {
+    const t = Math.floor(ms / 1000);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  };
+
+  function go(i) {
+    idx = (i + scenes.length) % scenes.length;
+    elapsedInScene = 0;
+    scenes.forEach((s, j) => s.classList.toggle('active', j === idx));
+    dots.forEach((d, j) => d.classList.toggle('on', j === idx));
+    sceneName.textContent = `${idx + 1}/${scenes.length} · ${scenes[idx].dataset.name}`;
+  }
+
+  const ONCE = new URLSearchParams(location.search).has('once');
+  if (ONCE) document.body.classList.add('rec');
+
+  function tick(now) {
+    const dt = now - last; last = now;
+    if (playing) {
+      elapsedInScene += dt;
+      if (elapsedInScene >= +scenes[idx].dataset.dur) {
+        if (ONCE && idx === scenes.length - 1) {
+          // End of a one-shot run: freeze on the final scene instead of looping.
+          elapsedInScene = +scenes[idx].dataset.dur;
+          playing = false;
+          toggleBtn.textContent = '▶';
+        } else {
+          go(idx + 1);
+        }
+      }
+    }
+    const before = scenes.slice(0, idx).reduce((a, s) => a + +s.dataset.dur, 0);
+    const done = before + Math.min(elapsedInScene, +scenes[idx].dataset.dur);
+    barFill.style.width = `${(done / total) * 100}%`;
+    clock.textContent = `${fmt(done)} / ${fmt(total)}`;
+    requestAnimationFrame(tick);
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    playing = !playing;
+    toggleBtn.textContent = playing ? '⏸' : '▶';
+  });
+  document.getElementById('next').addEventListener('click', () => go(idx + 1));
+  document.getElementById('prev').addEventListener('click', () => go(idx - 1));
+  document.getElementById('restart').addEventListener('click', () => go(0));
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); toggleBtn.click(); }
+    if (e.key === 'ArrowRight') go(idx + 1);
+    if (e.key === 'ArrowLeft') go(idx - 1);
+  });
+
+  go(0);
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

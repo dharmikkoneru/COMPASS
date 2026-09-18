@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* ── Palette re-tint ────────────────────────────────────────────────────────
+   Every gray-* and blue-* utility in the app regenerates from these values,
+   so all cards, buttons, borders and focus rings shift to the new scheme
+   without touching a single className. Grays lean indigo so surfaces sit on
+   the violet-navy canvas instead of dead blue-gray; the "blue" accent family
+   becomes indigo→violet with cyan reserved for data/chart highlights. */
+@theme {
+  --color-gray-900: #0f0f23;
+  --color-gray-800: #16162e;
+  --color-gray-700: #232347;
+  --color-gray-600: #34345e;
+  --color-gray-500: #6f6f99;
+  --color-gray-400: #9d9dc4;
+  --color-gray-300: #c6c6e0;
+  --color-gray-200: #e0e0f0;
+  --color-gray-100: #f0f0fa;
+
+  --color-blue-300: #a5b4fc;
+  --color-blue-400: #818cf8;
+  --color-blue-500: #7c6cf6;
+  --color-blue-600: #7c3aed;
+  --color-blue-700: #6d28d9;
+  --color-blue-900: #3b1a7a;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+/* ── Aurora canvas ──────────────────────────────────────────────────────────
+   Deep space-navy base with three fixed color fields: violet glow top-left,
+   magenta kiss top-right, cyan rising from bottom-right. */
+body {
+  background-color: #0b0b1c;
+  background-image:
+    radial-gradient(ellipse 60% 45% at 12% 0%, rgba(124, 58, 237, 0.28), transparent 62%),
+    radial-gradient(ellipse 45% 38% at 88% 6%, rgba(217, 70, 239, 0.14), transparent 65%),
+    radial-gradient(ellipse 55% 42% at 85% 100%, rgba(34, 211, 238, 0.16), transparent 60%),
+    radial-gradient(ellipse 40% 35% at 0% 100%, rgba(99, 102, 241, 0.12), transparent 65%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Faint survey-grid texture — the "mission control" layer. Sits above the
+   gradients but below all content; fades out toward the bottom of the view. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 78%);
+  mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 78%);
+}
+
+/* ── Helpers ──────────────────────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.text-gradient-brand {
+  background-image: linear-gradient(90deg, #67e8f9, #a78bfa 55%, #e879f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn-gradient {
+  background-image: linear-gradient(90deg, #7c3aed, #0891b2);
+  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.35);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-gradient:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 24px rgba(8, 145, 178, 0.45);
+}
+
+/* ── Chrome ───────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(167, 139, 250, 0.35);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c2c55;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3d3d73;
+  background-clip: padding-box;
+}
