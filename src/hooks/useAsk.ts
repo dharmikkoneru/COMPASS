@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
+import { invokeAi } from '../lib/ai';
 import { functionErrorMessage } from '../lib/errors';
-import { supabase } from '../lib/supabase';
 
 export interface AskSource {
   materialTitle: string;
@@ -33,11 +33,11 @@ export function useAsk() {
     setError(null);
     setLastQuestion(q);
     try {
-      const { data, error } = await supabase.functions.invoke('ask-material', {
-        body: { question: q, materialId: materialId ?? undefined },
+      const data = await invokeAi<AskResult>('ask-material', {
+        question: q,
+        materialId: materialId ?? undefined,
       });
-      if (error) throw error;
-      setResult(data as AskResult);
+      setResult(data);
       return true;
     } catch (err) {
       // The edge function explains its own failure in the response body.

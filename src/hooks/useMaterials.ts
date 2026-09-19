@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { invokeAi } from '../lib/ai';
 import { errorMessage, functionErrorMessage } from '../lib/errors';
 import { countQuestionsByQuiz, withStoredCounts } from '../lib/quizCounts';
 import { supabase } from '../lib/supabase';
@@ -101,11 +102,11 @@ export function useMaterials() {
       setGenerating(material.id);
       setError(null);
       try {
-        const { data, error } = await supabase.functions.invoke('generate-quiz', {
-          body: { materialId: material.id, difficulty, count },
+        const quiz = await invokeAi<Quiz>('generate-quiz', {
+          materialId: material.id,
+          difficulty,
+          count,
         });
-        if (error) throw error;
-        const quiz = data as Quiz;
         setQuizzesByMaterial((prev) => ({
           ...prev,
           [material.id]: [quiz, ...(prev[material.id] ?? [])],

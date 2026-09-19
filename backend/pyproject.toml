@@ -1,0 +1,22 @@
+# Test and lint configuration for the COMPASS API.
+# Dependencies live in requirements.txt / requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lets `import app.*` work without installing the package.
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# These files carry long lines on purpose: they are prompt text sent to the
+# model, kept byte-identical to the edge-function version so both backends
+# behave the same. Reflowing them would quietly change the prompt.
+"app/quiz.py" = ["E501"]
+"app/rag.py" = ["E501"]

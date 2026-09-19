@@ -1,0 +1,44 @@
+# ═══════════════════════════════════════════════════════════════
+# Render Blueprint — the COMPASS API (FastAPI, AI only).
+#
+# To deploy: Render dashboard → New → Blueprint → pick this repository.
+# Render reads this file and creates the service below, then redeploys it on
+# every push to main. Values marked `sync: false` are not stored here — Render
+# prompts for them once, in the dashboard, which is where secrets belong.
+#
+# The service owns AI only: quiz generation and RAG over uploaded materials.
+# Data, auth and storage stay in Supabase, and no service-role key is used.
+# ═══════════════════════════════════════════════════════════════
+services:
+  - type: web
+    name: compass-api
+    runtime: python
+    plan: free
+    # The API lives in backend/; the repository root is the Vite app.
+    rootDir: backend
+    # Pinned deliberately: the local machine may run a newer Python than Render
+    # offers, and a wheel gap on a brand-new interpreter is a slow way to learn.
+    buildCommand: pip install -r requirements.txt
+    # $PORT is supplied by Render; binding it (not a fixed port) is required.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Same Supabase project the frontend uses.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # Same key already set as a Supabase edge-function secret.
+      - key: GEMINI_API_KEY
+        sync: false
+      # CORS allow-list. Add the Vercel URL here once the project exists; the
+      # Netlify origin stays so neither host breaks during the transition.
+      - key: ALLOWED_ORIGINS
+        value: http://localhost:5173,https://compassprototype2026.netlify.app
+
+# Free instances sleep after ~15 minutes idle and take ~50 s to wake. The
+# frontend treats an unreachable API as "use the edge functions instead", so a
+# cold start degrades rather than fails — see src/lib/ai.ts.

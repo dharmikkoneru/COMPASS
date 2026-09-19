@@ -30,3 +30,15 @@ dist-ssr
 
 # Freebuff thread-local artifacts (preview logs, pid notes)
 .freebuff/
+
+# Python — the FastAPI service in backend/
+__pycache__/
+*.py[cod]
+backend/.venv/
+.pytest_cache/
+.ruff_cache/
+# `.env.*` above would swallow the backend template; it holds no secrets.
+!backend/.env.example
+
+# Supabase CLI state (written by `supabase login` / `link`) — per-machine.
+supabase/.temp/

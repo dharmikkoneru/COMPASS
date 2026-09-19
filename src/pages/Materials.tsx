@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import AskPanel from '../components/AskPanel';
 import MaterialUploader from '../components/MaterialUploader';
+import { invokeAi } from '../lib/ai';
 import { functionErrorMessage } from '../lib/errors';
-import { supabase } from '../lib/supabase';
 import { useMaterials, type QuizDifficulty } from '../hooks/useMaterials';
 import type { Material } from '../lib/types';
 import { quizCountLabel } from '../lib/quizCounts';
@@ -24,12 +24,9 @@ export default function Materials() {
     setIndexing(m.id);
     setIndexNote(null);
     try {
-      const { data, error } = await supabase.functions.invoke('embed-material', {
-        body: { materialId: m.id },
-      });
-      if (error) throw error;
+      const data = await invokeAi<{ chunks?: number }>('embed-material', { materialId: m.id });
       setIndexNote(
-        `Indexed "${m.title}" — ${(data as { chunks?: number }).chunks ?? 0} passages ready for questions.`,
+        `Indexed "${m.title}" — ${data.chunks ?? 0} passages ready for questions.`,
       );
     } catch (err) {
       setIndexNote(await functionErrorMessage(err, 'Indexing failed'));

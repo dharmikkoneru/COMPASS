@@ -27,6 +27,7 @@ run the later files only. They repair what earlier migrations shipped incomplete
 | --- | --- | --- |
 | `0002_fix_relationships.sql` | the `competency_mastery → profiles` foreign key, and the `recommendations (user_id, course_id)` unique key | admin heatmap and iGOT recommendations fail with HTTP 400 |
 | `0003_questions_insert_policy.sql` | the missing `INSERT` policy on `questions` (and `DELETE` on `quizzes`) | quiz generation fails after writing an empty quiz row |
+| `0008_lock_down_rpc_execute.sql` | `create function` grants EXECUTE to the **PUBLIC** pseudo-role, so 0007's `revoke … from anon` removed nothing — `match_chunks` was callable by anyone. Also pins `match_chunks` to `auth.uid()` | an unauthenticated caller can read another officer's indexed material passages by passing their id |
 
 Then paste and run `supabase/seed.sql` to load the 15-course mock iGOT Karmayogi catalog.
 
@@ -115,8 +116,36 @@ The key is stored server-side in Supabase secrets — it is **never** bundled in
 
 1. Run `supabase/migrations/0007_material_chunks_rag.sql` in the SQL editor
    (installs pgvector, creates `material_chunks` + the `match_chunks` search RPC — self-verifying, safe to re-run).
-2. Deploy the two functions listed above.
-3. On the Materials page, press **Index for Q&A** on a material, then ask it questions.
+2. **Run `supabase/migrations/0008_lock_down_rpc_execute.sql`** as well. Check your RPC
+grants with the public key — an unauthenticated call must be refused:
+
+   ```bash
+   curl -i -X POST "$VITE_SUPABASE_URL/rest/v1/rpc/match_chunks" \
+     -H "apikey: $VITE_SUPABASE_ANON_KEY" -H "Authorization: Bearer $VITE_SUPABASE_ANON_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"query_embedding":[],"p_user_id":"00000000-0000-0000-0000-000000000000"}'
+   ```
+
+   Permission denied means 0008 is live; an empty `[]` or a data list means it is not.
+3. Deploy the two functions listed above.
+4. On the Materials page, press **Index for Q&A** on a material, then ask it questions.
+   (Embeddings are pinned to 768 dimensions to match the column, and the retired
+   `text-embedding-004` is now only a fallback — see `backend/README.md`.)
+
+### Optional: the Python AI service (Render)
+
+The app can run its AI through FastAPI instead of the edge functions — same
+contracts, and it falls back to the edge functions automatically if the service is
+asleep. `render.yaml` at the repository root is a ready blueprint:
+
+1. Render → **New → Blueprint** → pick this repository → it creates `compass-api`
+2. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY` (both from Project Settings → API) and
+   `GEMINI_API_KEY` (the same value you set as an edge-function secret)
+3. Add the deployed frontend origin to `ALLOWED_ORIGINS` (comma-separated)
+4. Put the service URL in the frontend's `VITE_API_BASE_URL` and redeploy the site
+
+The service needs **no** service-role key: it forwards the officer's own token, so
+RLS still guards every read and write. Full details in `backend/README.md`.
 
 ### Google sign-in (optional, ~5 minutes)
 

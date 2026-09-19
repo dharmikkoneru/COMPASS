@@ -1,0 +1,11 @@
+# COMPASS API — runtime dependencies, pinned to the versions this suite was
+# verified against (ruff clean, 49 tests passing).
+#
+# Deliberately small. The Gemini and PostgREST calls are plain HTTP (httpx), so
+# there is no vendor SDK in the dependency tree to break when a model or a
+# client library is retired.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+httpx==0.28.1
+PyJWT[crypto]==2.14.0
+pydantic-settings==2.15.0

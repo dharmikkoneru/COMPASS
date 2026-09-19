@@ -180,6 +180,80 @@ Built against the SIH $0-stack blueprint (React/Supabase/Gemini/CI/Docker):
 - **CI** — `.github/workflows/ci.yml` (tsc + oxlint + vitest on push/PR).
 - **Containers** — `Dockerfile` (multi-stage nginx), `nginx.conf`, `docker-compose.yml`
   (port 8080), `k8s/compass.yaml` (Deployment+Service for Minikube).
-- **Git** — still to run by the user (shell was guarded): `git init -b main`,
-  commit, create GitHub repo, `git remote add origin <url> && git push -u origin main`,
-  then connect the repo in Netlify to retire drag-and-drop deploys.
+- **Git** — repo initialized on `main`, initial commit `3e7edd2` (104 files;
+  secret-scanned; `.freebuff/` ignored). Remaining: create the GitHub repo,
+  `git remote add origin <url> && git push -u origin main`, connect it in Netlify
+  (Import from GitHub) to retire drag-and-drop deploys.
+- **Production build refreshed** — `dist/` contains the RAG panel, OAuth button,
+  and `_redirects`; re-drag `dist/` (or push, once Netlify is git-connected) to
+  update the live site.
+
+## FastAPI AI service + Vercel (Sept 19, 2026)
+
+AI now lives in a Python FastAPI service (`backend/`) deployed on **Render**, with the
+Supabase edge functions kept as a runtime fallback chosen in `src/lib/ai.ts`. Vercel was
+added as a second frontend host; Netlify is untouched and still deploys. Nothing about the
+UI changed except the transport behind it.
+
+### Reproduce the backend artifacts
+
+```bash
+cd backend
+python -m venv .venv                                  # POSIX: .venv/bin/python
+./.venv/Scripts/python -m pip install -r requirements-dev.txt
+cp .env.example .env   # SUPABASE_URL, SUPABASE_ANON_KEY, GEMINI_API_KEY
+```
+
+The venv is per-machine and gitignored. Pinned Python 3.12 on Render (`render.yaml`);
+this machine runs 3.14 and the suite passes on it.
+
+### Run the API
+
+```bash
+cd backend && ./.venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+```
+
+`GET /healthz` answers `{"status":"ok",…,"configured":true}`; `/docs` is FastAPI's
+generated reference. **Port 8000**: 5173 (Vite) and 4173 (`vite preview`) are taken.
+
+Point the app at it with `VITE_API_BASE_URL=http://127.0.0.1:8000` in the root `.env`,
+then restart the Vite dev server — Vite bakes env vars at startup, so a running server
+will not pick it up. Leave it unset and the edge functions answer, exactly as before.
+
+### Checks
+
+```bash
+cd backend && ./.venv/Scripts/python -m pytest        # 49 tests
+cd backend && ./.venv/Scripts/python -m ruff check .  # clean
+```
+
+Both run in CI as the `api` job (the app's `verify` job is unchanged).
+
+### Verified locally, 2026-09-19
+
+- `uvicorn` boots; `/healthz` reports `configured: true` against the real project values
+- CORS preflight from `http://localhost:5173` → 200, origin echoed, `Authorization` allowed
+- no token → `401 {"error":"Not authenticated"}`; malformed token → 401 naming the reason
+- app: `tsc` clean, oxlint 0 warnings, **72/72 vitest** (13 of them new, covering the
+  transport choice, the fallback rules, and FastAPI's error shapes)
+
+**Still unverified:** the real RAG round trip *through Python*. It needs `GEMINI_API_KEY`
+available to the service (Render env or `backend/.env`); today that key exists only as a
+Supabase secret, so the local service can boot and authenticate but cannot call Gemini.
+
+### Security fix — migration 0008 (needs applying)
+
+Probing the deployed database as `anon` with the public key returned `[]` from
+`POST /rest/v1/rpc/match_chunks` instead of a permission error. Cause: `create function`
+grants EXECUTE to the **PUBLIC pseudo-role**, so 0007's `revoke … from anon` removed
+nothing. `match_chunks` is `SECURITY DEFINER` with a caller-supplied `p_user_id`, so any
+officer could name another officer's id and read their indexed passages.
+`0008_lock_down_rpc_execute.sql` adds `and p_user_id = auth.uid()`, revokes EXECUTE from
+PUBLIC and anon (re-granting `authenticated`), does the same for `apply_attempt`, and
+verifies the real ACLs via `pg_proc` — raising if anything is still open. Run it in the SQL
+editor; afterwards `anon` must get a permission error from `match_chunks`.
+
+Also fixed: `_shared/gemini.ts` no longer hard-codes the retired `text-embedding-004`.
+It now tries `gemini-embedding-001` (with `outputDimensionality: 768`) first, keeps the
+legacy name last, and discovers `embedContent` models — the same shape `backend/app/gemini.py`
+uses. **Redeploy `embed-material` and `ask-material`** or the fallback path stays broken.
