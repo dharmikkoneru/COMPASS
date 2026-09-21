@@ -149,7 +149,7 @@ export default function Login() {
       if (error) {
         setError(
           /invalid login credentials/i.test(error.message)
-            ? 'Guest demo is not provisioned on this deployment yet. Run supabase/migrations/0010_guest_access.sql and seed_demo_data.sql in the Supabase SQL Editor (see the migration header for the exact steps).'
+            ? 'Guest demo is not provisioned on this deployment yet. In Supabase → SQL Editor, run supabase/guest_setup_one_paste.sql — one paste, no edits. It creates the guest account and its demo data.'
             : errorMessage(error, 'Guest sign-in failed'),
         );
         return;
