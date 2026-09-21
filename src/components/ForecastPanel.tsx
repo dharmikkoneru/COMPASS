@@ -7,11 +7,9 @@ import {
 import { COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
 import type { CompetencyMastery } from '../lib/types';
 
-const VERDICT_STYLE: Record<ForecastVerdict, { chip: string; label: string }> = {
-  on_track: {
-    chip: 'bg-green-900/40 border-green-600 text-green-300',
-    label: 'On track',
-  },
+// on_track is absent on purpose: on-track competencies are summarised by the
+// readiness projection rather than listed, so the list stays attention-focused.
+const VERDICT_STYLE: Partial<Record<ForecastVerdict, { chip: string; label: string }>> = {
   catching_up: {
     chip: 'bg-blue-900/40 border-blue-600 text-blue-300',
     label: 'Catching up',
@@ -57,15 +55,20 @@ export default function ForecastPanel({ rows, readiness }: Props) {
           <p className="text-sm text-gray-400">
             Now <span className="font-bold text-white">{readiness}%</span>
             <span className="mx-1 text-gray-600">→</span>
-            ~4 weeks{' '}
+            in ~4 weeks{' '}
             <span
               className={`font-bold ${
                 delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-white'
               }`}
             >
-              {delta > 0 ? '+' : ''}
               {projectedReadiness}%
             </span>
+            {delta !== 0 && (
+              <span className={`ml-1 ${delta > 0 ? 'text-green-500/80' : 'text-red-400/80'}`}>
+                ({delta > 0 ? '+' : ''}
+                {delta})
+              </span>
+            )}
           </p>
           <p className="text-[11px] text-gray-500">
             {cadence !== null
@@ -87,7 +90,10 @@ export default function ForecastPanel({ rows, readiness }: Props) {
       {!loading && tracked.length > 0 && (
         <ul className="mt-4 space-y-2">
           {tracked.map((item) => {
-            const style = VERDICT_STYLE[item.verdict];
+            const style = VERDICT_STYLE[item.verdict] ?? {
+              chip: 'bg-gray-800 border-gray-600 text-gray-400',
+              label: 'Unknown',
+            };
             return (
               <li
                 key={item.competency}

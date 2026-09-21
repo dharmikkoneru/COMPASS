@@ -164,9 +164,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="glass p-6 rounded-lg">
-            <ForecastPanel rows={rows} readiness={readiness} />
-          </div>
+          <ForecastPanel rows={rows} readiness={readiness} />
 
           <div className="glass p-6 rounded-lg">
             <div className="flex justify-between items-baseline">
