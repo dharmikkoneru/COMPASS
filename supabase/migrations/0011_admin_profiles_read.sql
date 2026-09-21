@@ -21,6 +21,12 @@
 -- profiles_update_admin (0001) already let an admin change a role,
 -- which the UI exposes with a self-protection guard.
 --
+-- SECOND RESPONSIBILITY — the shared guest account may not become an
+-- admin. Anyone can sign in as demo@compass.gov.in (the password ships
+-- with the demo), so promoting it would hand the whole directory to
+-- every visitor. A guard trigger enforces officer-only, and this script
+-- also demotes the account if an earlier experiment promoted it.
+--
 -- Safe to re-run: every SELECT policy on profiles is dropped first.
 -- ═══════════════════════════════════════════════════════════════
 
@@ -64,9 +70,47 @@ begin
   end if;
 end $$;
 
--- Show the live state: expect profiles_read_self_or_admin as the only SELECT.
+-- ── Guest account stays an officer ────────────────────────────────
+
+-- Repair: undo any promotion of the shared demo account.
+update public.profiles
+   set role = 'officer'
+ where lower(email) = 'demo@compass.gov.in'
+   and role <> 'officer';
+
+-- Prevent it happening again, whatever route is used (API, SQL, UI).
+create or replace function public.protect_guest_role()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if lower(new.email) = 'demo@compass.gov.in' and new.role <> 'officer' then
+    raise exception 'The shared guest demo account must stay an officer - promoting it would expose the admin directory to anyone using the public demo credentials.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists protect_guest_role on public.profiles;
+create trigger protect_guest_role
+  before insert or update on public.profiles
+  for each row execute function public.protect_guest_role();
+
+-- ── Verification ───────────────────────────────────────────────────
+
+-- Expect profiles_read_self_or_admin as the only SELECT policy.
 select policyname, cmd, roles, qual
   from pg_policies
  where schemaname = 'public'
    and tablename  = 'profiles'
  order by cmd, policyname;
+
+-- Expect guest_role = officer and the guard trigger present.
+select (select role from public.profiles
+         where lower(email) = 'demo@compass.gov.in') as guest_role,
+       (select exists (select 1 from pg_trigger
+                        where tgrelid = 'public.profiles'::regclass
+                          and tgname = 'protect_guest_role'
+                          and not tgisinternal))    as guard_trigger;

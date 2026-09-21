@@ -121,14 +121,21 @@ export default function AdminUsers() {
                     >
                       {r.role}
                     </span>
-                    {r.id !== meId && (
-                      <button
-                        onClick={() => void toggleRole(r.id, r.role)}
-                        disabled={busyId === r.id}
-                        className="ml-2 text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 disabled:opacity-40"
-                      >
-                        {busyId === r.id ? 'saving…' : r.role === 'admin' ? 'demote' : 'promote'}
-                      </button>
+                    {/* The shared guest account may not be promoted: its password is
+                        public, so admin rights there would expose the directory. The
+                        database enforces this too (0011 protect_guest_role). */}
+                    {isGuestEmail(r.email) ? (
+                      <span className="ml-2 text-[11px] text-gray-500">shared demo — locked</span>
+                    ) : (
+                      r.id !== meId && (
+                        <button
+                          onClick={() => void toggleRole(r.id, r.role)}
+                          disabled={busyId === r.id}
+                          className="ml-2 text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 disabled:opacity-40"
+                        >
+                          {busyId === r.id ? 'saving…' : r.role === 'admin' ? 'demote' : 'promote'}
+                        </button>
+                      )
                     )}
                     {r.id === meId && <span className="ml-2 text-[11px] text-gray-600">you</span>}
                   </td>
