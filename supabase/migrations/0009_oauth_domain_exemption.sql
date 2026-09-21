@@ -14,13 +14,16 @@
 -- *claim* an arbitrary gov.in address they do not own via OAuth,
 -- and the anonymous free-signup path stays closed.
 --
--- Implementation note: GoTrue sets auth.users.provider at insert
--- time ('email' | 'google' | ...), so we can branch in a BEFORE
--- INSERT trigger without probing auth.identities, which is not
--- yet populated when this trigger fires. We additionally require
--- email_confirmed_at to be set — always true for Google signups —
--- so a hypothetical provider that returns unverified emails would
--- fall through to the domain check instead of being waived.
+-- Implementation note: auth.users has no `provider` column — GoTrue stores
+-- it inside raw_app_meta_data ('email' | 'google' | ...), so we read it from
+-- there. We additionally require email_confirmed_at to be set — always true
+-- for Google signups — so a hypothetical provider that returns unverified
+-- emails would fall through to the domain check instead of being waived.
+--
+-- v2 fix: the first version referenced new.provider, which does not exist
+-- on auth.users (42703 at insert time, breaking ALL new signups). plpgsql
+-- resolves record fields lazily, so the function validated but failed on
+-- first use — caught while provisioning the guest account in 0010.
 --
 -- Safe to re-run: replaces the trigger function and trigger.
 -- ═══════════════════════════════════════════════════════════════
@@ -33,6 +36,7 @@ set search_path = ''
 as $$
 declare
   domain   text;
+  provider text;
   allowed  constant text[] := array[
     'gov.in',
     'nic.in',
@@ -41,7 +45,8 @@ declare
 begin
   -- OAuth signup with a provider-verified email: allow regardless
   -- of domain (Google sign-ins with personal Gmail must work).
-  if new.provider <> 'email'
+  provider := coalesce(new.raw_app_meta_data ->> 'provider', 'email');
+  if provider <> 'email'
      and new.email_confirmed_at is not null then
     return new;
   end if;
