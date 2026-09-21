@@ -1,5 +1,12 @@
 -- ═══════════════════════════════════════════════════════════════
--- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v3
+-- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v4
+--
+-- v4 CHANGE: the guest account could be created but never sign in.
+-- A user inserted straight into auth.users has NO auth.identities row
+-- and a NULL instance_id, and GoTrue resolves password sign-ins
+-- through that identity — so every attempt answered "Invalid login
+-- credentials". PART 2 now repairs both, which means re-running this
+-- file also fixes an account left behind by an earlier partial run.
 --
 -- Copy THIS ENTIRE FILE → Supabase SQL Editor → Run. That's it.
 -- No edits needed: the guest UUID is already filled in.
@@ -72,12 +79,23 @@ create trigger enforce_signup_email_domain
 
 
 -- ═══════════════════════════════════════════════════════════════
--- PART 2 — GUEST ACCOUNT (0010)
+-- PART 2 — GUEST ACCOUNT (0010 v2)
+--
+-- A row in auth.users alone is NOT signable-in: GoTrue looks the
+-- account up through auth.identities and expects the default
+-- instance id rather than NULL. So this part:
+--   1. inserts the user (instance_id = GoTrue's default instance),
+--   2. repairs those fields if the row already exists from a partial
+--      earlier run,
+--   3. creates the missing 'email' identity row,
+--   4. drops the throwaway probe account used while diagnosing.
 -- ═══════════════════════════════════════════════════════════════
 
 do $$
 declare
-  guest_id constant uuid := 'd0e10000-0000-4000-8000-000000000001';
+  guest_id    constant uuid := 'd0e10000-0000-4000-8000-000000000001';
+  g_instance  constant uuid := '00000000-0000-0000-0000-000000000000';
+  pid_is_uuid boolean;
 begin
   if exists (
     select 1 from auth.users
@@ -92,7 +110,7 @@ begin
     created_at, updated_at, confirmation_token, recovery_token,
     email_change, email_change_token_new
   ) values (
-    null, guest_id, 'authenticated', 'authenticated',
+    g_instance, guest_id, 'authenticated', 'authenticated',
     'demo@compass.gov.in',
     crypt('Compass-Guest-2026', gen_salt('bf', 10)),
     now(),
@@ -101,6 +119,65 @@ begin
     now(), now(), '', '', '', ''
   )
   on conflict (id) do nothing;
+
+  -- Repair path for a row left by an earlier run: NULL instance_id,
+  -- possibly stale hash, token columns looking "pending".
+  update auth.users
+     set instance_id            = g_instance,
+         encrypted_password     = crypt('Compass-Guest-2026', gen_salt('bf', 10)),
+         email_confirmed_at     = now(),
+         confirmation_token     = '',
+         recovery_token         = '',
+         email_change           = '',
+         email_change_token_new = '',
+         updated_at             = now()
+   where id = guest_id;
+
+  -- The missing piece: without this identity row the account exists
+  -- but every password sign-in answers "Invalid login credentials".
+  if not exists (
+    select 1 from auth.identities
+     where user_id = guest_id and provider = 'email'
+  ) then
+    -- provider_id is text in current schemas and uuid in some older
+    -- ones; branch on the live column type instead of guessing.
+    select data_type = 'uuid' into pid_is_uuid
+      from information_schema.columns
+     where table_schema = 'auth' and table_name = 'identities'
+       and column_name = 'provider_id';
+
+    if pid_is_uuid then
+      execute $sql$
+        insert into auth.identities
+          (id, user_id, provider_id, identity_data, provider,
+           last_sign_in_at, created_at, updated_at)
+        values
+          (gen_random_uuid(), $1, $1,
+           jsonb_build_object('sub', $1::text,
+                              'email', 'demo@compass.gov.in',
+                              'email_verified', true,
+                              'phone_verified', false),
+           'email', now(), now(), now())
+      $sql$ using guest_id;
+    else
+      execute $sql$
+        insert into auth.identities
+          (id, user_id, provider_id, identity_data, provider,
+           last_sign_in_at, created_at, updated_at)
+        values
+          (gen_random_uuid(), $1, $1::text,
+           jsonb_build_object('sub', $1::text,
+                              'email', 'demo@compass.gov.in',
+                              'email_verified', true,
+                              'phone_verified', false),
+           'email', now(), now(), now())
+      $sql$ using guest_id;
+    end if;
+  end if;
+
+  -- Housekeeping: the probe account created while diagnosing the
+  -- guest sign-in failure (cascades to its profile row).
+  delete from auth.users where email = 'probe@compass.gov.in';
 end $$;
 
 insert into public.profiles (id, email, full_name, department, designation, role)
@@ -349,3 +426,14 @@ select tgname, tgrelid::regclass as on_table, tgenabled
   from pg_trigger
  where tgrelid = 'auth.users'::regclass
    and not tgisinternal;
+
+-- 4d. Guest auth plumbing — this is what v4 fixed.
+--     Expect instance_id = 00000000-0000-0000-0000-000000000000,
+--     confirmed = t, identities = 1.
+select u.id,
+       u.instance_id,
+       u.email_confirmed_at is not null as confirmed,
+       (select count(*) from auth.identities i
+         where i.user_id = u.id and i.provider = 'email') as identities
+  from auth.users u
+ where u.email = 'demo@compass.gov.in';
