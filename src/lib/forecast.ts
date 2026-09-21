@@ -56,7 +56,6 @@ export function impliedLevel(mastery: number, attempts: number): number {
 /** Mastery after k further quizzes scored at `level` (level is clamped 0..100). */
 export function projectMastery(
   mastery: number,
-  attempts: number,
   level: number,
   k: number,
 ): number {
@@ -182,7 +181,7 @@ export function buildForecast(
       mastery,
       level,
       verdict,
-      plateau: projectMastery(mastery, attempts, level, 6),
+      plateau: projectMastery(mastery, level, 6),
       quizzesToClose,
       weeksToClose,
     };
@@ -199,7 +198,7 @@ export function buildForecast(
     COMPETENCIES.reduce((acc, c) => {
       const item = items.find((i) => i.competency === c)!;
       if (item.verdict === 'not_assessed') return acc;
-      return acc + projectMastery(item.mastery, 1, item.level, projectQuizzes);
+      return acc + projectMastery(item.mastery, item.level, projectQuizzes);
     }, 0) / COMPETENCIES.length,
   );
 

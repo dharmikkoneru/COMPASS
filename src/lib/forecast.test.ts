@@ -44,16 +44,16 @@ describe('impliedLevel', () => {
 
 describe('projectMastery', () => {
   it('moves mastery toward the level by the EMA factor each quiz', () => {
-    const one = projectMastery(40, 3, 80, 1);
+    const one = projectMastery(40, 80, 1);
     expect(one).toBeCloseTo(40 + 0.4 * (80 - 40), 5);
   });
 
   it('converges to the level as k grows', () => {
-    expect(projectMastery(40, 3, 80, 20)).toBeCloseTo(80, 1);
+    expect(projectMastery(40, 80, 20)).toBeCloseTo(80, 1);
   });
 
   it('is a no-op at k=0', () => {
-    expect(projectMastery(55, 4, 90, 0)).toBeCloseTo(55, 5);
+    expect(projectMastery(55, 90, 0)).toBeCloseTo(55, 5);
   });
 });
 
