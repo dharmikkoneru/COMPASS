@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { errorMessage } from '../lib/errors';
+import { isGuestEmail } from '../lib/guest';
 import { validatePassword } from '../lib/password';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +27,10 @@ export default function Settings() {
 
   const isOAuth = session?.user.app_metadata?.provider !== undefined
     && session.user.app_metadata.provider !== 'email';
+  // The shared guest demo account must not be able to rotate its own
+  // credential — one judge changing it would lock every other judge out.
+  const isGuest = isGuestEmail(email);
+  const managedExternally = isOAuth || isGuest;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -95,12 +100,14 @@ export default function Settings() {
       <section className="glass rounded-xl p-6 shadow-md">
         <h2 className="font-semibold text-white mb-1">Change password</h2>
         <p className="text-xs text-gray-500 mb-4">
-          {isOAuth
-            ? 'You sign in with an external provider — password changes are managed there.'
+          {managedExternally
+            ? isGuest
+              ? 'The guest demo account is managed by the deployment — password changes are disabled.'
+              : 'You sign in with an external provider — password changes are managed there.'
             : 'Verify your current password, then choose a strong new one.'}
         </p>
 
-        {isOAuth ? (
+        {managedExternally ? (
           <p className="text-sm text-amber-300">
             Password changes are handled by your sign-in provider, not COMPASS.
           </p>

@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { isGuestEmail } from '../lib/guest';
 
 const links = [
   { to: '/', label: 'Dashboard' },
@@ -55,7 +56,14 @@ export default function Navbar() {
           {session && profile ? (
             <>
               <div className="text-right hidden sm:block">
-                <p className="text-sm text-white leading-tight">{profile.full_name ?? profile.email}</p>
+                <p className="text-sm text-white leading-tight">
+                  {profile.full_name ?? profile.email}
+                  {isGuestEmail(profile.email) && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-semibold align-middle">
+                      DEMO
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-gray-400 leading-tight">
                   {profile.designation ?? 'Officer'} · {profile.role}
                 </p>

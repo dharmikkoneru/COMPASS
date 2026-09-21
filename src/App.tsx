@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import DemoBanner from './components/DemoBanner';
 import ProtectedRoute from './components/ProtectedRoute';
 import SetupRequired from './components/SetupRequired';
 import { isSupabaseConfigured } from './lib/supabase';
@@ -24,6 +25,7 @@ export default function App() {
       <BrowserRouter>
         <div className="min-h-screen text-white">
           <Navbar />
+          <DemoBanner />
           <main className="container mx-auto p-8">
             <Routes>
               <Route path="/login" element={<Login />} />

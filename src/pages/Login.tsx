@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { errorMessage } from '../lib/errors';
 import { passwordStrength, passwordIssues, validatePassword } from '../lib/password';
 import { clearFailures, formatLockDuration, getLockState, recordFailure } from '../lib/loginThrottle';
+import { GUEST_EMAIL, GUEST_PASSWORD } from '../lib/guest';
 import { supabase } from '../lib/supabase';
 
 type Mode = 'signin' | 'signup' | 'forgot';
@@ -131,6 +132,33 @@ export default function Login() {
 
   const input =
     'w-full rounded-md bg-black/25 border border-white/10 px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/40 transition';
+
+  // Guest demo access: one click into the shared seeded account. If the
+  // account has not been provisioned yet (0010 not run), say so plainly —
+  // that is an operator setup step, not a judge-facing failure. Failures are
+  // deliberately not recorded in the throttle: this is a shared account, and
+  // locking GUEST_EMAIL would lock the demo for everyone.
+  const signInAsGuest = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: GUEST_EMAIL,
+        password: GUEST_PASSWORD,
+      });
+      if (error) {
+        setError(
+          /invalid login credentials/i.test(error.message)
+            ? 'Guest demo is not provisioned on this deployment yet. Run supabase/migrations/0010_guest_access.sql and seed_demo_data.sql in the Supabase SQL Editor (see the migration header for the exact steps).'
+            : errorMessage(error, 'Guest sign-in failed'),
+        );
+        return;
+      }
+      navigate(destination, { replace: true });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -318,6 +346,14 @@ export default function Login() {
                   </svg>
                   Sign in with Google
                 </span>
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void signInAsGuest()}
+                className="w-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-200 font-medium py-2 rounded-md transition disabled:opacity-50"
+              >
+                ⚡ Try as Guest — instant demo access
               </button>
             </>
           )}
