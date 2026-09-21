@@ -40,7 +40,10 @@ declare
   allowed  constant text[] := array[
     'gov.in',
     'nic.in',
-    'mospi.gov.in'
+    'mospi.gov.in',
+    'compass.gov.in'  -- the platform's own demo domain (guest account);
+                      -- the check is EXACT-match, so subdomains of gov.in
+                      -- are not automatically allowed.
   ];
 begin
   -- OAuth signup with a provider-verified email: allow regardless
