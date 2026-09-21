@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import AdminUsers from '../components/AdminUsers';
 import { useAllMastery } from '../hooks/useCompetencyProfile';
 import { COMPETENCIES, COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
 import { useAuth } from '../context/AuthContext';
@@ -12,9 +13,12 @@ function heatColor(mastery: number): string {
   return 'bg-red-700/80 text-red-100';
 }
 
+type AdminTab = 'heatmap' | 'users';
+
 export default function Admin() {
   const { profile, loading: authLoading } = useAuth();
   const isAdmin = profile?.role === 'admin';
+  const [tab, setTab] = useState<AdminTab>('heatmap');
   const { rows, loading, error } = useAllMastery(isAdmin);
 
   const byDept = useMemo(() => {
@@ -62,12 +66,38 @@ where email = 'you@example.com';`}</pre>
 
   return (
     <div className="space-y-6">
-      <header className="border-b border-gray-700 pb-4">
-        <h2 className="text-3xl font-bold text-amber-400">Org Competency Heatmap</h2>
-        <p className="text-gray-400 mt-1">
-          Mean mastery per competency across departments — plan training drives from evidence.
-        </p>
+      <header className="border-b border-gray-700 pb-4 flex flex-wrap justify-between items-end gap-3">
+        <div>
+          <h2 className="text-3xl font-bold text-amber-400">
+            {tab === 'users' ? 'User Accounts' : 'Org Competency Heatmap'}
+          </h2>
+          <p className="text-gray-400 mt-1">
+            {tab === 'users'
+              ? 'Every account record in one restricted view — credentials are never exposed.'
+              : 'Mean mastery per competency across departments — plan training drives from evidence.'}
+          </p>
+        </div>
+        <div className="flex rounded-md overflow-hidden border border-white/10">
+          {(['heatmap', 'users'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs sm:text-sm transition ${
+                tab === t
+                  ? 'bg-amber-500/20 text-amber-200'
+                  : 'bg-white/5 text-gray-300 hover:bg-white/10'
+              }`}
+            >
+              {t === 'heatmap' ? 'Heatmap' : 'User accounts'}
+            </button>
+          ))}
+        </div>
       </header>
+
+      {tab === 'users' && <AdminUsers />}
+
+      {tab === 'heatmap' && (
+        <>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
       {loading && <p className="text-gray-400">Loading org data…</p>}
@@ -118,6 +148,8 @@ where email = 'you@example.com';`}</pre>
             <span className="ml-2">– = not yet assessed</span>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
