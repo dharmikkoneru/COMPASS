@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import CompetencyRadar from '../components/CompetencyRadar';
+import ForecastPanel from '../components/ForecastPanel';
 import { useAttempts } from '../hooks/useAttempts';
 import { useCompetencyProfile } from '../hooks/useCompetencyProfile';
 import { COMPETENCIES, COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
@@ -161,6 +162,10 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className="glass p-6 rounded-lg">
+            <ForecastPanel rows={rows} readiness={readiness} />
           </div>
 
           <div className="glass p-6 rounded-lg">
