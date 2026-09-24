@@ -34,10 +34,16 @@ services:
       # Same key already set as a Supabase edge-function secret.
       - key: GEMINI_API_KEY
         sync: false
-      # CORS allow-list. Add the Vercel URL here once the project exists; the
-      # Netlify origin stays so neither host breaks during the transition.
+      # CORS allow-list: every browser origin allowed to call this API. Kept as
+      # a blueprint value (not `sync: false`) on purpose, so the list lives in
+      # the repository and a forgotten entry cannot silently break the live
+      # site. A missing origin fails the browser's preflight with a 400, which
+      # the frontend reads as "API unreachable" and answers from the Supabase
+      # edge functions instead — right up until it doesn't.
+      # Add every host the app is served from; a new Vercel project or custom
+      # domain needs its own entry here.
       - key: ALLOWED_ORIGINS
-        value: http://localhost:5173,https://compassprototype2026.netlify.app
+        value: http://localhost:5173,http://127.0.0.1:5173,https://compassprototype2026.netlify.app,https://compass-tawny-five.vercel.app,https://compass.vercel.app
 
 # Free instances sleep after ~15 minutes idle and take ~50 s to wake. The
 # frontend treats an unreachable API as "use the edge functions instead", so a

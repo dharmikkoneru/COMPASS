@@ -67,7 +67,14 @@ async def get_jwks(settings: Settings, *, refresh: bool = False) -> dict:
             # Stale keys that still validate are better than refusing everyone
             # because the auth server is briefly unreachable.
             return _jwks
-        raise AuthError(f"could not fetch the project's signing keys ({err})") from err
+        # Name the URL, not just the failure. A misconfigured SUPABASE_URL is
+        # indistinguishable from a Supabase outage in the old message, and the
+        # client only ever sees this string — "Name or service not known" with
+        # no host sent us to the dashboard once already.
+        raise AuthError(
+            f"could not fetch the project's signing keys from {settings.jwks_url} "
+            f"({err}) - check that SUPABASE_URL names this project's Supabase URL"
+        ) from err
 
     _jwks = keys
     _jwks_fetched_at = time.monotonic()

@@ -5,7 +5,7 @@ without re-deriving anything. **Read this before starting work.** Operational pr
 deploy, reset the demo, re-render the video) live in `freebuff/run.md` — this file is the
 "what's next / what's known" list.
 
-Last updated: **2026-09-24**, after the roadmap batch B0–B2 + blueprint item 4 (C1) was verified live.
+Last updated: **2026-09-24**, after the roadmap batch B0–B2 + blueprint item 4 (C1) shipped — and after the post-push verification found three live-deployment blockers (section H).
 
 Legend: **Done** · **Queued** (decided, next up) · **Ready** (decided, not started) ·
 **Proposed** (needs a decision) · **Don't claim** (out of scope on purpose)
@@ -126,11 +126,14 @@ high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
 
 ## F. Demo & ops housekeeping
 
-- **F1 · Guest baseline reset — now overdue.** Re-run `supabase/guest_setup_one_paste.sql`
-  whenever the demo has been quizzed into a different state. The guest account currently has **8
-  attempts instead of the seeded 6**, because two of my verifications submitted real quizzes (the
-  0012 check and the B1 result-screen check, both 5/5). One paste, no edits; PART 3.0 deletes any
-  attempt outside the seeded six and re-asserts mastery.
+- **F1 · Guest baseline reset — now overdue, and it did not do what we advertised.**
+  Re-run `supabase/guest_setup_one_paste.sql` whenever the demo has been quizzed into a different
+  state. Measured today, the guest holds **14 attempts** (seeded: 6) and **6 quizzes** (seeded: 3) —
+  my earlier "8 attempts" was written from memory and was wrong, and the extra quizzes come from
+  generations in earlier sessions. PART 3 could not remove those quizzes because its inserts are
+  `ON CONFLICT DO NOTHING`, which only ever adds: **v5 of the script now deletes the guest's own
+  quizzes and materials outside the seeded set** (the cascade takes their questions and attempts),
+  so "re-run it for the pristine demo" is finally true.
 - **F2 · Netlify is manual-deploy only.** The user set the "Ignored build step" to `exit 0`, so git
   pushes no longer build there. To refresh it: build locally, then **drag `dist/`** onto the site's
   Deploys tab (no build minutes) or **Trigger deploy → Clear cache and deploy site**. Netlify build
@@ -145,6 +148,47 @@ high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
 - **F5 · Deck edits need tooling.** `python-pptx` is **not** installed on this machine (the earlier
   deck edits left no script behind). A programmatic deck edit needs a throwaway local venv, or the
   deck gets edited in PowerPoint by hand.
+
+---
+
+## H. Live-deployment blockers found 2026-09-24 (post-push verification)
+
+Shipping `03692a3` surfaced more than the prompt check: **AI generation is broken on every live
+host, for three independent reasons.** Verified end to end, not inferred.
+
+1. **CORS: Render rejects the real Vercel origin.** Preflight for
+   `Origin: https://compass-tawny-five.vercel.app` answers **400** with no
+   `access-control-allow-origin`. `render.yaml` pinned `ALLOWED_ORIGINS` to localhost + Netlify
+   with a comment saying "add the Vercel URL once the project exists" — never done. **Fixed in the
+   repo** (`render.yaml` + the `config.py` default). In the browser this is invisible as CORS: the
+   OPTIONS fails, the POST becomes `net::ERR_FAILED`, and the app reads that as "API unreachable"
+   and falls back to the edge functions.
+2. **Render cannot fetch the project's signing keys.** Every authenticated endpoint answers
+   `Not authenticated: could not fetch the project's signing keys ([Errno -2] Name or service not
+   known)` — a DNS failure on the Render side, i.e. `SUPABASE_URL` there is a placeholder or typo.
+   `configured: true` only proves the variable is non-empty. **Needs the user** (Render →
+   Environment). The error now names the exact JWKS URL it tried, so this is diagnosable from the
+   response alone instead of needing the dashboard.
+3. **The edge-function fallback fails too.** The deployed `generate-quiz` is stale (its tried-model
+   list starts with `gemini-2.5-flash`, which the repo replaced with `gemini-3.6-flash`), and
+   Google answered `404 … no longer available to new users` for the 2.5 family and
+   `503 … experiencing high demand` for 3.6/3.7/3.8. The 404s are ours to fix (redeploy the
+   function); the 503s are transient and clear on retry.
+
+**Dangerous interaction to remember:** fixing (1) alone makes the live site *worse*. Today the CORS
+failure pushes every call to the edge fallback; once Render is reachable, its auth failure returns
+**401**, and `UNAVAILABLE_STATUS = {408, 425, 429, 502, 503, 504}` means a 401 does **not** fall
+back — so AI fails hard. Fix `SUPABASE_URL` first, or at the same time.
+
+**Still unverified:** whether the new scenario prompt produces scenario questions. Both paths to
+that answer are blocked by the above (Render by auth, the edge function by the stale deploy), so
+the prompt is verified only as code — its assertions pass, and both generators carry identical
+text. First real generation after the two fixes is the test.
+
+**Cheaper alternative worth considering (this is F3):** unset `VITE_API_BASE_URL` on Vercel so the
+site uses the edge functions, exactly as Netlify already does. That removes Render from the demo
+path entirely — one env var, no CORS, no JWKS — at the cost of the "FastAPI backend" claim being
+unused during judging.
 
 ---
 

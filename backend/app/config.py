@@ -36,11 +36,14 @@ class Settings(BaseSettings):
     gemini_embed_dimensions: int = 768
 
     # ── HTTP ──────────────────────────────────────────────────────
-    # Comma-separated. The Netlify site stays listed while Vercel is the new
-    # primary, so neither deploy breaks during the transition.
+    # Comma-separated. Both deployed hosts stay listed, so neither breaks
+    # during the transition. Every URL the app is served from needs an entry:
+    # an origin that is missing does not produce an API error, it fails the
+    # browser's CORS preflight, which reads like a dead service.
     allowed_origins: str = (
         "http://localhost:5173,http://127.0.0.1:5173,"
-        "https://compassprototype2026.netlify.app,https://compass.vercel.app"
+        "https://compassprototype2026.netlify.app,"
+        "https://compass-tawny-five.vercel.app,https://compass.vercel.app"
     )
 
     # ── Auth ──────────────────────────────────────────────────────

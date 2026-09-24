@@ -141,7 +141,11 @@ asleep. `render.yaml` at the repository root is a ready blueprint:
 1. Render → **New → Blueprint** → pick this repository → it creates `compass-api`
 2. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY` (both from Project Settings → API) and
    `GEMINI_API_KEY` (the same value you set as an edge-function secret)
-3. Add the deployed frontend origin to `ALLOWED_ORIGINS` (comma-separated)
+3. Make sure `ALLOWED_ORIGINS` lists **every** origin the app is served from
+   (comma-separated). `render.yaml` already carries localhost, the Netlify site
+   and the Vercel site; a new Vercel project or custom domain needs its own
+   entry. An origin that is missing fails the browser's preflight with a 400 —
+   which looks like a dead service, not a config mistake.
 4. Put the service URL in the frontend's `VITE_API_BASE_URL` and redeploy the site
 
 The service needs **no** service-role key: it forwards the officer's own token, so
@@ -212,6 +216,9 @@ immediately get their personal gap radar.
 | `Missing VITE_SUPABASE_URL` on startup | Create `.env` from `.env.example` and restart `npm run dev`. |
 | Quiz generation says 404 | Edge function not deployed, or wrong function name — see step 5. |
 | Quiz generation says 401 | You're signed out, or the anon key in `.env` is stale. |
+| API calls fail on the deployed site but work locally | The site's origin is missing from `ALLOWED_ORIGINS` on Render — the browser's preflight returns 400 before the request is even made. Check the Render logs for `OPTIONS` and compare with the address bar. |
+| `Not authenticated: could not fetch the project's signing keys … Name or service not known` | `SUPABASE_URL` on Render is wrong (a placeholder, a typo, or quoted). It must be the project's own URL from Project Settings → API, e.g. `https://<project-ref>.supabase.co` — not the template value from this file. |
+| `No Gemini model could generate the quiz` listing 404s and 503s | Two different things: `404 … no longer available to new users` means the model list needs the current family (redeploy the edge function), while `503 … experiencing high demand` is Google-side and clears on retry. |
 | Quiz generation mentions "row-level security policy" | Run `supabase/migrations/0003_questions_insert_policy.sql` — the `questions` table needs its write policy. |
 | Materials list shows a quiz with `n Qs` that opens to "This quiz has no questions" | Generation failed mid-write before `0003` was applied. Delete the empty quiz row (or the material) and regenerate. |
 | "GEMINI_API_KEY secret is not set" | `supabase secrets set GEMINI_API_KEY=...` (step 5). |

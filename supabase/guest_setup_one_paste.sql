@@ -1,5 +1,13 @@
 -- ═══════════════════════════════════════════════════════════════
--- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v4
+-- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v5
+--
+-- v5 CHANGE: "re-run it to get the pristine demo back" was not true.
+-- PART 3's seeds use ON CONFLICT DO NOTHING, which cannot remove a quiz
+-- an earlier demo generated — the live guest account had grown to 6
+-- quizzes against a seeded 3, and those strays show up in the Materials
+-- list in front of judges. PART 3.0 now also deletes the guest's own
+-- quizzes and materials outside the seeded set, and the cascade takes
+-- their questions and attempts with them.
 --
 -- v4 CHANGE: the guest account could be created but never sign in.
 -- A user inserted straight into auth.users has NO auth.identities row
@@ -28,8 +36,9 @@
 --   PART 4  Verification — check the numbers at the bottom.
 --
 -- 100% safe to re-run: re-running re-asserts the demo baseline and
--- wipes any extra quiz attempts the guest made in between — that is
--- your demo-reset button between judge sessions.
+-- wipes any extra quiz attempts, generated quizzes and uploaded
+-- materials the guest accumulated in between — that is your demo-reset
+-- button between judge sessions.
 -- ═══════════════════════════════════════════════════════════════
 
 
@@ -220,6 +229,27 @@ DELETE FROM public.attempts
      'd0e10000-0000-4000-8000-00000000d004',
      'd0e10000-0000-4000-8000-00000000d005',
      'd0e10000-0000-4000-8000-00000000d006'
+   );
+
+-- 3.0b Reset the guest's own generated content too. Without this, a quiz
+--      generated during an earlier demo survives (the inserts below are
+--      ON CONFLICT DO NOTHING, which only ever adds) and the guest shows
+--      more quizzes than the demo is supposed to have. Deleting a quiz
+--      cascades to its questions and to any attempt recorded on it.
+DELETE FROM public.quizzes
+ WHERE created_by = uid
+   AND id NOT IN (
+     'd0e10000-0000-4000-8000-00000000b001',
+     'd0e10000-0000-4000-8000-00000000b002',
+     'd0e10000-0000-4000-8000-00000000b003'
+   );
+
+DELETE FROM public.materials
+ WHERE user_id = uid
+   AND id NOT IN (
+     'd0e10000-0000-4000-8000-00000000a001',
+     'd0e10000-0000-4000-8000-00000000a002',
+     'd0e10000-0000-4000-8000-00000000a003'
    );
 
 -- ── 3.1 Materials (guest-owned) ────────────────────────────────
