@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
+import { COMPETENCY_SHORT, GAP_THRESHOLD, displayMastery } from '../lib/competencies';
+import { overallReadiness } from '../lib/gapEngine';
 import { errorMessage } from '../lib/errors';
-import type { Question, Quiz } from '../lib/types';
+import type { AttemptResult, CompetencyMastery, MasteryDelta, Question, Quiz } from '../lib/types';
 
 interface TagTally {
   tag: string;
@@ -11,7 +12,45 @@ interface TagTally {
   total: number;
 }
 
+interface AttemptSummary {
+  score: number;
+  perTag: TagTally[];
+  /** Per-competency movement, from the rows apply_attempt hands back. */
+  deltas: MasteryDelta[];
+  /** Null when the pre-submission snapshot could not be read — see submit(). */
+  readinessBefore: number | null;
+  readinessAfter: number | null;
+}
+
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+/**
+ * `33% → 60% ▲` for one competency.
+ *
+ * The RPC returns the updated mastery rows and this screen used to discard them
+ * (`void data;`), so the officer was told "mastery updated" without being shown
+ * a single number. The move is the whole point of the review screen — and of the
+ * demo, where the radar visibly shifting is the proof the gap engine works.
+ */
+function MasteryMove({ delta }: { delta: MasteryDelta }) {
+  const before = displayMastery(delta.before);
+  const after = displayMastery(delta.after);
+  const tone =
+    after > before
+      ? 'text-green-300'
+      : after < before
+        ? 'text-red-300'
+        : 'text-gray-400';
+  const arrow = after > before ? '▲' : after < before ? '▼' : '—';
+  return (
+    <span
+      className={`font-medium whitespace-nowrap ${tone}`}
+      title={`Mastery was ${delta.before.toFixed(1)}%, now ${delta.after.toFixed(1)}%`}
+    >
+      {before}% → {after}% {arrow}
+    </span>
+  );
+}
 
 export default function QuizRunner({
   quiz,
@@ -24,7 +63,7 @@ export default function QuizRunner({
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ score: number; perTag: TagTally[] } | null>(null);
+  const [result, setResult] = useState<AttemptSummary | null>(null);
 
   const total = questions.length;
   const current = questions[idx];
@@ -57,6 +96,13 @@ export default function QuizRunner({
         tallies.set(t.tag, t);
       }
 
+      // Snapshot the profile *before* the RPC rewrites it: the rows it returns
+      // are the post-attempt values, and "33% → 60%" needs both halves.
+      const { data: snapshotRows } = await supabase
+        .from('competency_mastery')
+        .select('competency_tag, mastery, attempts, correct, total');
+      const snapshot = (snapshotRows ?? null) as CompetencyMastery[] | null;
+
       const { data, error } = await supabase.rpc('apply_attempt', {
         p_quiz_id: quiz.id,
         p_answers: answers,
@@ -65,8 +111,32 @@ export default function QuizRunner({
       });
       if (error) throw error;
 
-      setResult({ score, perTag: [...tallies.values()] });
-      void data;
+      const updated = (data ?? []) as AttemptResult[];
+      const before = new Map(
+        (snapshot ?? []).map((r) => [r.competency_tag, Number(r.mastery)]),
+      );
+      const touched = new Set(updated.map((r) => r.competency_tag));
+
+      setResult({
+        score,
+        perTag: [...tallies.values()],
+        deltas: updated.map((r) => ({
+          competency_tag: r.competency_tag,
+          before: before.get(r.competency_tag) ?? 0,
+          after: Number(r.mastery),
+        })),
+        // Readiness is the mean across the whole taxonomy, so swapping the
+        // touched rows into the snapshot yields the figure the dashboard shows.
+        // A failed snapshot read means no honest delta — better to omit the
+        // line than to claim "0% → 62%".
+        readinessBefore: snapshot ? overallReadiness(snapshot) : null,
+        readinessAfter: snapshot
+          ? overallReadiness([
+              ...snapshot.filter((r) => !touched.has(r.competency_tag)),
+              ...updated,
+            ])
+          : null,
+      });
     } catch (err) {
       setError(errorMessage(err, 'Submission failed'));
     } finally {
@@ -97,24 +167,49 @@ export default function QuizRunner({
           <p className="text-gray-400 mt-2">
             {result.score} of {total} correct — mastery updated across your competency profile.
           </p>
+          {result.readinessBefore !== null && result.readinessAfter !== null && (
+            <p className="text-sm text-gray-300 mt-3">
+              Overall readiness <span className="text-gray-400">{result.readinessBefore}%</span>{' '}
+              →{' '}
+              <span
+                className={
+                  result.readinessAfter >= result.readinessBefore
+                    ? 'text-green-400 font-semibold'
+                    : 'text-amber-400 font-semibold'
+                }
+              >
+                {result.readinessAfter}%
+              </span>
+            </p>
+          )}
         </div>
 
         <div className="glass rounded-lg p-6">
-          <h3 className="font-semibold text-white mb-3">Competency breakdown</h3>
+          <h3 className="font-semibold text-white">Competency breakdown</h3>
+          <p className="text-xs text-gray-500 mt-1 mb-3">
+            Mastery is a 60/40 blend of what you already knew and how you did on this attempt.
+          </p>
           <ul className="space-y-2">
             {perTag.map((t) => {
               const ratio = Math.round((t.correct / t.total) * 100);
+              const delta = result.deltas.find((d) => d.competency_tag === t.tag);
               return (
-                <li key={t.tag} className="flex items-center justify-between bg-gray-700/50 rounded px-3 py-2">
+                <li
+                  key={t.tag}
+                  className="flex items-center justify-between gap-3 bg-gray-700/50 rounded px-3 py-2"
+                >
                   <span className="text-gray-200 text-sm">
                     {COMPETENCY_SHORT[t.tag as keyof typeof COMPETENCY_SHORT] ?? t.tag}
                   </span>
-                  <span
-                    className={`text-sm font-medium ${
-                      ratio >= GAP_THRESHOLD ? 'text-green-400' : 'text-red-400'
-                    }`}
-                  >
-                    {t.correct}/{t.total}
+                  <span className="flex items-center gap-3 text-sm">
+                    {delta && <MasteryMove delta={delta} />}
+                    <span
+                      className={
+                        ratio >= GAP_THRESHOLD ? 'text-green-400 font-medium' : 'text-red-400 font-medium'
+                      }
+                    >
+                      {t.correct}/{t.total}
+                    </span>
                   </span>
                 </li>
               );

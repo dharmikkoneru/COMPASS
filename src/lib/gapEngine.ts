@@ -4,23 +4,31 @@ import type { CompetencyMastery } from './types';
 /**
  * COMPASS Gap Engine — deterministic competency diagnostics.
  *
- * After every quiz attempt, per-competency mastery is updated with an
- * exponential moving average (EMA) on the cumulative score:
+ * After every quiz attempt, each competency the quiz touched is updated with an
+ * exponential moving average over *that attempt's own* score:
  *
- *   new_mastery = 0.6 * old_mastery + 0.4 * (correct/total * 100)
+ *   m_n = 0.6 * m_(n-1) + 0.4 * s_n      (s_n = this attempt's ratio, as a %)
+ *
+ * The SQL twin is the apply_attempt RPC (migration 0012), which uses the same
+ * weights — so the number this module predicts is the number the database
+ * stores. It used to average the *lifetime cumulative* ratio instead, which on
+ * an account with history moved mastery by tenths of a point per quiz and made
+ * the radar look frozen (BACKLOG.md section A).
  *
  * A competency is a "gap" when mastery < GAP_THRESHOLD (60).
  *
  * This is deliberately NOT an LLM call: it is explainable to evaluators,
  * free, instant, and identical on every run. Unit-tested in
- * src/lib/gapEngine.test.ts. The SQL twin lives in the apply_attempt RPC.
+ * src/lib/gapEngine.test.ts.
  */
 
 export const EMA_PRIOR_WEIGHT = 0.6;
 
-export function masteryFromCumulative(oldMastery: number, correct: number, total: number): number {
-  const cumulative = total === 0 ? 0 : (correct / total) * 100;
-  return Math.max(0, Math.min(100, EMA_PRIOR_WEIGHT * oldMastery + (1 - EMA_PRIOR_WEIGHT) * cumulative));
+const clamp = (value: number) => Math.max(0, Math.min(100, value));
+
+/** One quiz's score for a competency, as a 0–100 percentage. */
+export function masteryFromAttempt(oldMastery: number, attemptPercent: number): number {
+  return clamp(EMA_PRIOR_WEIGHT * oldMastery + (1 - EMA_PRIOR_WEIGHT) * attemptPercent);
 }
 
 export interface DiagnosisItem {

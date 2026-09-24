@@ -170,10 +170,28 @@ const responseSchema = {
   required: ['title', 'difficulty', 'questions'],
 };
 
+// Kept byte-identical to backend/app/quiz.py::build_prompt. The two backends
+// must produce the same kind of question, and pyproject.toml exempts both files
+// from the line-length rule for exactly this reason — reflowing one side would
+// quietly change the contract.
+//
+// The scenario framing is the point of the assessment: an officer is asked what
+// to do in a situation grounded in the material, not to recite a definition.
+// The response schema is unchanged (no new field, so no migration): the scenario
+// lives in `text`, and `explanation` justifies the action.
 function buildPrompt(materialText: string, difficulty: string, count: number): string {
   return `You are an assessment designer for India's Ministry of Statistics and Programme Implementation (MoSPI).
 
 Create exactly ${count} multiple-choice questions from the LEARNING MATERIAL below.
+
+Every question must be a SCENARIO: a short workplace situation an officer would actually face, followed by a decision to make.
+
+Scenario rules (this is what the assessment measures):
+- Open with a concrete situation — a field team reports a problem, a supervisor questions submitted data, an estimate looks wrong, a release deadline slips, a questionnaire comes back incomplete.
+- Ask what the officer should do, check, decide or conclude — or which reading of the situation is correct.
+- The situation and the correct action must both come from the material. Use its actual methods, definitions and figures; invent no procedure, number or policy it does not state.
+- No definitional or recall questions ("What is X?", "Which of the following is a dimension of…"). Test what the officer does with the knowledge, not recital of it.
+- Wrong options must be plausible mistakes an officer could make — the wrong method applied, a validation step skipped, an indicator misread — never filler.
 
 Rules:
 - Every question must be answerable strictly from the material. Do not invent facts.
@@ -181,7 +199,7 @@ Rules:
 - Tag each question with the single most relevant competency from this list:
   ${COMPETENCY_TAGS.map((t) => `"${t}"`).join(', ')}
 - Overall difficulty target: "${difficulty}". Individual question difficulty must also be one of easy/medium/hard.
-- Include a one-paragraph explanation citing the part of the material that justifies the answer.
+- Include a one-paragraph explanation: which part of the material justifies the correct action, and why the most tempting wrong option fails.
 - Write in clear professional English suitable for serving officers.
 - Give the quiz a short descriptive title mentioning the material's topic.
 

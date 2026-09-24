@@ -104,6 +104,13 @@ export interface AttemptResult {
   total: number;
 }
 
+/** Movement in one competency caused by a single submission. */
+export interface MasteryDelta {
+  competency_tag: string;
+  before: number;
+  after: number;
+}
+
 /** Payload produced by the generate-quiz edge function. */
 export interface GeneratedQuestion {
   idx: number;

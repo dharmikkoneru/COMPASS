@@ -4,7 +4,7 @@ import {
   forecastLine,
   type ForecastVerdict,
 } from '../lib/forecast';
-import { COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
+import { COMPETENCY_SHORT, GAP_THRESHOLD, displayMastery } from '../lib/competencies';
 import type { CompetencyMastery } from '../lib/types';
 
 // on_track is absent on purpose: on-track competencies are summarised by the
@@ -103,7 +103,7 @@ export default function ForecastPanel({ rows, readiness }: Props) {
                   <span className="text-sm font-medium text-gray-100">
                     {COMPETENCY_SHORT[item.competency] ?? item.competency}
                   </span>
-                  <span className="text-xs text-gray-500">{Math.round(item.mastery)}%</span>
+                  <span className="text-xs text-gray-500">{displayMastery(item.mastery)}%</span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${style.chip}`}
                   >

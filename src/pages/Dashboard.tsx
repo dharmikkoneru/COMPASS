@@ -3,7 +3,7 @@ import CompetencyRadar from '../components/CompetencyRadar';
 import ForecastPanel from '../components/ForecastPanel';
 import { useAttempts } from '../hooks/useAttempts';
 import { useCompetencyProfile } from '../hooks/useCompetencyProfile';
-import { COMPETENCIES, COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
+import { COMPETENCIES, COMPETENCY_SHORT, GAP_THRESHOLD, displayMastery } from '../lib/competencies';
 import { averageScore, relativeTime, summarizeAttempts } from '../lib/attempts';
 import { diagnose, overallReadiness } from '../lib/gapEngine';
 
@@ -92,7 +92,7 @@ export default function Dashboard() {
                     {COMPETENCY_SHORT[strengths[0].competency]}
                   </p>
                   <p className="text-sm text-gray-500 mt-1">
-                    {Math.round(strengths[0].mastery)}% mastery
+                    {displayMastery(strengths[0].mastery)}% mastery
                   </p>
                 </>
               ) : (
@@ -134,7 +134,7 @@ export default function Dashboard() {
                             : 'bg-amber-900/30 border-amber-700 text-amber-300'
                         }`}
                       >
-                        {g.competency} · {Math.round(g.mastery)}%
+                        {g.competency} · {displayMastery(g.mastery)}%
                       </span>
                     ))}
                   </div>

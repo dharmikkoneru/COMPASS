@@ -61,6 +61,7 @@ supabase/
 render.yaml       Render blueprint for the FastAPI service
 vercel.json       Vercel config (SPA deep-link rewrites)
 netlify.toml      Netlify config, kept working alongside Vercel
+BACKLOG.md        possible changes, decisions and verified state — read before starting work
 ```
 
 ## RAG — "Ask your material"

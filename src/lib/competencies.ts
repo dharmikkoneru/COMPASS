@@ -33,3 +33,19 @@ export const GAP_THRESHOLD = 60;
 export function isGap(mastery: number): boolean {
   return mastery < GAP_THRESHOLD;
 }
+
+/**
+ * Integer percent for display, without misreporting a value just under the bar
+ * as the bar itself.
+ *
+ * Mastery 59.97 rounds to "60%" while still counting as a gap, so the demo
+ * account showed a chip reading `Sampling · 60%` beside `below 60% mastery` —
+ * a contradiction an officer will spot (BACKLOG.md B2). Values that would round
+ * up onto the threshold from below show the integer below it instead;
+ * everything else rounds normally.
+ */
+export function displayMastery(mastery: number): number {
+  const value = Number.isFinite(mastery) ? mastery : 0;
+  const rounded = Math.round(value);
+  return value < GAP_THRESHOLD && rounded >= GAP_THRESHOLD ? GAP_THRESHOLD - 1 : rounded;
+}

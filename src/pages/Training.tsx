@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useCompetencyProfile } from '../hooks/useCompetencyProfile';
-import { COMPETENCY_SHORT, GAP_THRESHOLD } from '../lib/competencies';
+import { COMPETENCY_SHORT, GAP_THRESHOLD, displayMastery } from '../lib/competencies';
 import { diagnose } from '../lib/gapEngine';
 
 export default function Training() {
@@ -76,7 +76,7 @@ export default function Training() {
               {gaps.slice(0, 4).map((g) => (
                 <li key={g.competency} className="flex justify-between items-center text-sm">
                   <span className="text-gray-200">{g.competency}</span>
-                  <span className="text-red-400 font-medium">{Math.round(g.mastery)}%</span>
+                  <span className="text-red-400 font-medium">{displayMastery(g.mastery)}%</span>
                 </li>
               ))}
             </ul>
@@ -94,7 +94,7 @@ export default function Training() {
               {strengths.slice(0, 4).map((s) => (
                 <li key={s.competency} className="flex justify-between items-center text-sm">
                   <span className="text-gray-200">{COMPETENCY_SHORT[s.competency]}</span>
-                  <span className="text-green-400 font-medium">{Math.round(s.mastery)}%</span>
+                  <span className="text-green-400 font-medium">{displayMastery(s.mastery)}%</span>
                 </li>
               ))}
             </ul>
@@ -104,7 +104,7 @@ export default function Training() {
 
       <p className="text-xs text-gray-600">
         Gap threshold: {GAP_THRESHOLD}% mastery. Mastery updates use a 60/40 EMA blend of prior
-        mastery and cumulative performance.
+        mastery and the score of the attempt you just took.
       </p>
     </div>
   );

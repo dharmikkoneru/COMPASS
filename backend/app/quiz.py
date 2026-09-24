@@ -65,13 +65,22 @@ def build_prompt(material_text: str, difficulty: str, count: int) -> str:
 
 Create exactly {count} multiple-choice questions from the LEARNING MATERIAL below.
 
+Every question must be a SCENARIO: a short workplace situation an officer would actually face, followed by a decision to make.
+
+Scenario rules (this is what the assessment measures):
+- Open with a concrete situation — a field team reports a problem, a supervisor questions submitted data, an estimate looks wrong, a release deadline slips, a questionnaire comes back incomplete.
+- Ask what the officer should do, check, decide or conclude — or which reading of the situation is correct.
+- The situation and the correct action must both come from the material. Use its actual methods, definitions and figures; invent no procedure, number or policy it does not state.
+- No definitional or recall questions ("What is X?", "Which of the following is a dimension of…"). Test what the officer does with the knowledge, not recital of it.
+- Wrong options must be plausible mistakes an officer could make — the wrong method applied, a validation step skipped, an indicator misread — never filler.
+
 Rules:
 - Every question must be answerable strictly from the material. Do not invent facts.
 - Each question has exactly 4 options and exactly one correct option (correct_idx is 0-based).
 - Tag each question with the single most relevant competency from this list:
   {tags}
 - Overall difficulty target: "{difficulty}". Individual question difficulty must also be one of easy/medium/hard.
-- Include a one-paragraph explanation citing the part of the material that justifies the answer.
+- Include a one-paragraph explanation: which part of the material justifies the correct action, and why the most tempting wrong option fails.
 - Write in clear professional English suitable for serving officers.
 - Give the quiz a short descriptive title mentioning the material's topic.
 

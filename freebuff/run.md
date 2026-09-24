@@ -257,3 +257,29 @@ Also fixed: `_shared/gemini.ts` no longer hard-codes the retired `text-embedding
 It now tries `gemini-embedding-001` (with `outputDimensionality: 768`) first, keeps the
 legacy name last, and discovers `embedContent` models — the same shape `backend/app/gemini.py`
 uses. **Redeploy `embed-material` and `ask-material`** or the fallback path stays broken.
+
+## Mastery rule corrected, and Netlify is manual-deploy (Sept 23, 2026)
+
+- **`apply_attempt` now weights the current attempt.** Migration
+  `0012_apply_attempt_per_attempt_ema.sql` (applied and verified live) replaces the lifetime
+  cumulative ratio with the attempt's own ratio, so the rule the app documents is the rule the
+  database runs:
+
+  ```
+  mastery := 0.6 * old_mastery + 0.4 * (this attempt's correct / total for that competency) * 100
+  ```
+
+  Before this, mastery moved by 0.2–4.0 points per quiz on the demo account (10–14 attempts per
+  competency) and one axis rounded to an identical integer, so the radar looked frozen. Verified
+  with a real 5/5 attempt: Sampling 33.28 → 59.97 (+26.69; the old rule gave +0.02) and readiness
+  57% → 64% in the live UI. `attempts` / `correct` / `total` stay **lifetime** counters. Re-running
+  `0005_fix_apply_attempt_excluded.sql` reverts to the old rule.
+- **Guest demo reset.** After any demo quizzing (a verification attempt is a real row), re-run
+  `supabase/guest_setup_one_paste.sql` in the SQL editor: idempotent, one paste, restores the
+  pristine six-attempt baseline. It doubles as the between-judges reset.
+- **Netlify builds are disabled.** The site's "Ignored build step" is set to `exit 0`, so pushes no
+  longer build there (build minutes had reached 75%). To refresh it: `npm run build`, then drag
+  `dist/` onto the site's Deploys tab — no build minutes — or **Trigger deploy → Clear cache and
+  deploy site**. Vercel still deploys automatically on every push, so batch commits per roadmap
+  item and ask before pushing.
+- Pending changes and their verified status live in **`BACKLOG.md`** at the repo root.

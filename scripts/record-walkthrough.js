@@ -38,7 +38,6 @@ const MP4 = path.join(__dirname, '..', 'docs', 'walkthrough.mp4');
   // Wait for the walkthrough to reach the end (once mode)
   // The walkthrough auto-plays; we wait until it freezes on the last scene
   const totalDuration = 137000; // 137 seconds in ms
-  const startTime = Date.now();
 
   // Poll for completion: last scene is active and playing has stopped
   await page.waitForFunction(

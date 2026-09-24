@@ -1,26 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { COMPETENCIES, GAP_THRESHOLD } from './competencies';
-import { diagnose, masteryFromCumulative, overallReadiness } from './gapEngine';
+import { diagnose, masteryFromAttempt, overallReadiness } from './gapEngine';
 import type { CompetencyMastery } from './types';
 
-describe('masteryFromCumulative (EMA)', () => {
-  it('blends 60% prior mastery with 40% cumulative score', () => {
+describe('masteryFromAttempt (EMA)', () => {
+  it('blends 60% prior mastery with 40% of this attempt', () => {
     // 0.6 * 50 + 0.4 * 80 = 62
-    expect(masteryFromCumulative(50, 8, 10)).toBeCloseTo(62);
+    expect(masteryFromAttempt(50, 80)).toBeCloseTo(62);
   });
 
-  it('returns 40% of cumulative score when prior mastery is 0', () => {
-    // 0.4 * 100 = 40
-    expect(masteryFromCumulative(0, 5, 5)).toBeCloseTo(40);
+  it('returns 40% of the attempt when prior mastery is 0', () => {
+    // A brand-new competency seeded by one perfect quiz.
+    expect(masteryFromAttempt(0, 100)).toBeCloseTo(40);
+  });
+
+  it('moves a practised competency by tens of points, not tenths', () => {
+    // The regression that read as "the competency map never updates": 33.28 is
+    // the demo account's Sampling mastery, and a perfect attempt must lift it
+    // to 0.6 * 33.28 + 40 ≈ 59.97 — the old cumulative term gave +0.02.
+    expect(masteryFromAttempt(33.28, 100)).toBeCloseTo(59.968, 3);
   });
 
   it('clamps into [0, 100]', () => {
-    expect(masteryFromCumulative(100, 10, 10)).toBeLessThanOrEqual(100);
-    expect(masteryFromCumulative(0, 0, 10)).toBeGreaterThanOrEqual(0);
-  });
-
-  it('handles zero totals defensively', () => {
-    expect(masteryFromCumulative(50, 0, 0)).toBeCloseTo(30); // 0.6 * 50
+    expect(masteryFromAttempt(100, 100)).toBeLessThanOrEqual(100);
+    expect(masteryFromAttempt(0, 0)).toBeGreaterThanOrEqual(0);
   });
 });
 
