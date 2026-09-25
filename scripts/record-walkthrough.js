@@ -93,8 +93,13 @@ const MP4 = path.join(__dirname, '..', 'docs', 'walkthrough.mp4');
       '-y',
     ], { stdio: 'inherit' });
     console.log(`✅ Done! MP4 saved to: ${MP4}`);
-    // Clean up raw file
-    if (fs.existsSync(WEBM)) fs.unlinkSync(WEBM);
+    // Remove the raw recordings. Playwright writes its own page@*.webm into
+    // docs/, and it used to be left behind — ~9 MB of litter per render, which
+    // two consecutive runs turned into 18 MB of untracked files in the repo.
+    // The converted MP4 is the artifact; the raw file is not.
+    for (const raw of new Set([WEBM, videoPath])) {
+      if (fs.existsSync(raw)) fs.unlinkSync(raw);
+    }
   } catch (err) {
     console.error('❌ ffmpeg conversion failed:', err.message);
     console.log(`📁 Raw WebM kept at: ${WEBM}`);
