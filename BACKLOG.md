@@ -105,11 +105,24 @@ it is idempotent and doubles as the between-judges reset.
   reads "keeps a person, not the model, in control once that step ships". There is still no approval
   state and no review UI — do not claim one on stage.
 
-**Needs the user, in this order:** apply `0013` in the Supabase SQL editor, then re-paste
-`guest_setup_one_paste.sql` (**v7**, which also tags the 15 seeded questions `Recall` — they honestly
-are recall-style — so the demo shows the tag without needing a live generation). Generation keeps
-working in between: both write paths detect a missing column and store the questions untagged rather
-than failing a request the officer waited a minute for.
+**D1 verified live, 2026-09-25** — the user ran `0013` and the v7 reset, and all three layers were
+confirmed afterwards:
+
+- **The database:** `15/15` seeded questions carry `cognitive_level`, all `Recall`, which is what they
+  honestly are.
+- **The UI:** the deployed Vercel build renders the chip on the seeded quiz — `Recall`, uppercased by
+  CSS, with the tooltip *"The material states this rule or figure — the question checks it was
+  recognised."*
+- **A real generation through the deployed Render API:** `HTTP 200 in 32.1s`, three questions tagged
+  `{Recall: 2, Application: 1}` — **not all the same level**, so the tag discriminates rather than
+  defaulting — and all three scenario-shaped, this time from the Data Quality material rather than
+  the CPI one (a third independent confirmation of C1, across a different document). The verification
+  quiz was deleted afterwards: guest back to `3/3/15/6`, 8 mastery rows and 5 recommendations
+  unchanged.
+
+**If a fresh quiz comes back with every level NULL**, that is a stale Render deploy rather than a code
+bug — the tolerant write drops the tag whenever the column is absent. `.freebuff/verify_generation_levels.py`
+makes that distinction explicitly and cleans up after itself.
 
 **Deck edit method (F5 said this needed a venv — it does not):** `.freebuff/reword_slide4.py` unzips
 `COMPASS_final.pptx`, rewrites the run text in `ppt/slides/slide4.xml`, and copies every other member
