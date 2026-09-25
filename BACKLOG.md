@@ -192,6 +192,36 @@ deck gets edited in PowerPoint by hand. (The deck's XML can be *read* with the s
   photo *and* in the file. **Needs the team's actual ID** — only the team can supply it. The other
   four fields (Problem Statement ID SIH26101, Theme Smart Education, PS Category Software, Team Name
   Build Horizon) are correct and match the official slide.
+- **F8 · The demo video is in the deck, and the recorder had a truncation bug.** Asking for "the
+  latest demo video" turned up two files that are genuinely different renders (`walkthrough.mp4`
+  silent/2026-09-20/2:09.9 vs `walkthrough-vo.mp4` narrated/2026-09-18/2:17.5 — frames differ at 20 s,
+  60 s and 100 s), so the narration was re-recorded onto a fresh render as chosen. Three things came
+  out of it:
+  1. **`scripts/record-walkthrough.js` was stopping the recording as soon as the closing scene
+     appeared** — a 2 s buffer where the scene declares 10 s — so every render ended ~8 s early. The
+     re-render came out at 2:10 against the page's own 137 s, which is how the bug surfaced; the
+     silent video had been 129.9 s for days without anyone noticing the closing narration was cut.
+     It now waits for the scene's own `data-dur` read from the page, so it cannot drift from
+     `walkthrough.html` again, and the render is 2:18.
+  2. **Four narration lines were stale** and were rewritten: the architecture line said "React on
+     Netlify" (now Vercel + FastAPI on Render, with the edge function as the fallback), the rigor
+     line said "forty-five passing tests" (now over two hundred), the quiz line omitted the new
+     cognitive level, and the submit line now names the mastery movement. `make_voiceover.py`'s timing
+     gate rejected two drafts before they fit their scene budgets — that gate is worth keeping.
+  3. **`scripts/embed-deck-video.py` (new, tracked)** embeds the narrated video into slide 6 with the
+     full OOXML plumbing: video part, poster frame, the three relationships (video, image, and the
+     Microsoft `media` extension PowerPoint 2010+ plays), and the mp4 content type. It verifies the
+     finished deck by re-opening it, parsing the slide XML and checking every relationship id the
+     slide references is declared. **One real trap it now guards:** `<Default Extension="mp4">` must
+     come *before* the first `<Override>` in `[Content_Types].xml` — appending it before `</Types>`
+     puts it after thirty overrides and wakes PowerPoint's repair prompt.
+  The deck is now 7.9 MB, slide 6 changed in exactly three parts (its XML, its rels, the content
+  types) with 73 parts byte-identical and 2 new media parts. **Nobody has opened it in PowerPoint
+  from here** — no LibreOffice or Office automation on this machine — so confirm playback, and
+  that the clip at `x=609600 y=4220000 cx=3600000 cy=2025000` sits where you want it (it is 3.9in x
+  2.2in, to the left of the "view prototype" link; it can be resized freely).
+  Backups: `COMPASS_final.pre-video-slide6.pptx` (pre-embed) and
+  `COMPASS_final.pre-d2-reword.pptx`. The old videos are in `.freebuff/video-backups/` (gitignored).
 - **F7 · Run-of-show + a rehearsal tool that leaves no trace.** `docs/run-of-show.md` is the timed
   live-demo script with measured numbers and recovery lines. `.freebuff/guest_probe.py`
   (`status`/`snapshot`/`restore`) checkpoints and rolls back the guest account over PostgREST using

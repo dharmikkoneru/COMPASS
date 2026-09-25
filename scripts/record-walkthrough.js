@@ -50,8 +50,19 @@ const MP4 = path.join(__dirname, '..', 'docs', 'walkthrough.mp4');
     { timeout: totalDuration + 30000 }
   );
 
-  // Extra 2s buffer for the last scene to render
-  await page.waitForTimeout(2000);
+  // Let the last scene play out. Waiting only a couple of seconds stops the
+  // recording the moment the closing scene *appears*, which silently truncates
+  // it — a 10 s scene lost ~8 s, so the video ended at 130 s while the script's
+  // own total said 137 s, and the closing narration was cut off with it. The
+  // scene's declared duration is read from the page so this cannot drift from
+  // walkthrough.html again.
+  const lastSceneMs = await page.evaluate(() => {
+    const scenes = document.querySelectorAll('.scene');
+    const last = scenes[scenes.length - 1];
+    return Number(last?.dataset?.dur ?? 10000);
+  });
+  console.log(`⏳ Letting the closing scene run (${lastSceneMs} ms)...`);
+  await page.waitForTimeout(lastSceneMs + 1000);
 
   console.log('⏹  Recording complete. Saving video...');
   const video = page.video();

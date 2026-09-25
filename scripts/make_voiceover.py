@@ -40,11 +40,11 @@ SCENES = [
      "COMPASS closes that loop. Assess what you know. Diagnose where you're weak. "
      "Train exactly there. A cycle that never stops."),
     ("AI quiz",      32000, 13000,
-     "Paste any material. In seconds, Gemini writes a real quiz — tagged by "
-     "competency, graded by difficulty, straight from your content. No templates."),
+     "Paste any material. In seconds, Gemini writes a real quiz from it — tagged by "
+     "competency, difficulty, and cognitive level: recall, application, analysis."),
     ("Taking a quiz", 45000, 11000,
-     "Every answer is evidence. And when you finish, you don't just get a score — "
-     "you get the explanation behind every single question."),
+     "Every answer is evidence. The moment you submit, you see exactly how far "
+     "each competency moved — and why, question by question."),
     ("Mastery",      56000, 13000,
      "Here's the engine. A first attempt sets a cautious forty percent. Score full marks, "
      "and mastery lands at sixty-four — exactly as the math demands."),
@@ -58,11 +58,12 @@ SCENES = [
      "For administrators: a whole department's readiness, every competency, one heat map. "
      "Intuition becomes data."),
     ("Architecture", 101000, 14000,
-     "Under the hood: React on Netlify. Supabase with row-level security on every table. "
-     "And a Gemini edge function that polices its own time budget — because reliability is a feature."),
+     "Under the hood: React on Vercel. Supabase with row-level security on every table. "
+     "A Python service on Render calls Gemini — and if it sleeps, an edge function "
+     "takes over."),
     ("Rigor",        115000, 12000,
-     "This isn't just a demo. Forty-five passing tests. Self-verifying "
-     "migrations. Everything you just saw — verified live, end to end."),
+     "This isn't just a demo. Over two hundred passing tests. Self-verifying "
+     "migrations. And everything you just saw — verified live, end to end."),
     ("Summary",      127000, 10000,
      "COMPASS. Assess. Diagnose. Train. The platform that makes training stick. Thank you."),
 ]

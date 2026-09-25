@@ -137,6 +137,23 @@ Segments are mixed at offsets (adelay + amix, loudnorm -16 LUFS, fade-out) and m
 with `-c:v copy` — the video stream is never re-encoded. Tweak narration text freely; the tool
 re-synthesizes and re-checks timing every run.
 
+## Re-rendering the demo video (Sept 25, 2026)
+
+```bash
+node scripts/record-walkthrough.js            # docs/walkthrough.mp4   (now 2:18, was 2:10)
+python scripts/make_voiceover.py              # docs/walkthrough-vo.mp4
+python scripts/embed-deck-video.py            # into slide 6 of COMPASS_final.pptx
+```
+
+- `record-walkthrough.js` used to stop the recording 2 s after the closing scene *appeared*, losing
+  ~8 s of it and cutting the last narration line. It now waits for that scene's own `data-dur`.
+- `make_voiceover.py` needs `edge-tts`, which is not installed globally: use a throwaway venv
+  (`.freebuff/vo-venv` is gitignored). It fails loudly when a narration line overruns its scene
+  budget — two of the rewritten lines did, and the fix is to shorten the line, not the budget.
+- `embed-deck-video.py` needs `python-pptx` **not** installed; it writes the OOXML directly and
+  verifies its own output. `python-pptx` would also work, and would be less code, but adds a
+  dependency for one slide.
+
 ## How to run the dev server
 
 ```bash
