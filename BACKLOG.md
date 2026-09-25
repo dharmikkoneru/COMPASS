@@ -220,11 +220,20 @@ is on the deployed hosts yet.
 - **Bug the tests caught:** `navigator.onLine` is `undefined` in a non-browser environment, so
   `browserIsOnline()` returned `undefined` instead of a boolean. Now only an explicit `=== false`
   counts as offline.
-- **Caveat on the backend tests:** `pytest` is still not installed here, so the new assertions in
-  `backend/tests/test_quiz.py` (schema enum, prompt, level normalisation) were exercised by
-  `.freebuff/check_quiz_contract.py` instead, which imports `app.quiz` directly and also proves the
-  Python and TypeScript prompts are byte-identical. **CI's `api` job is what runs the real suite** —
-  check it before believing the backend is green.
+- **Correction worth keeping: the backend suite DOES run here.** Earlier notes said `pytest` was
+  missing — that was the *global* interpreter. `backend/.venv/Scripts/python.exe -m pytest -q` runs
+  the real 63-test suite, and `./.venv/Scripts/python.exe -m ruff check .` is clean. Run both from
+  `backend/` before believing anything about the API; do not rely on "CI will catch it".
+  (`.freebuff/check_quiz_contract.py` is still useful for one thing CI cannot do: it proves the Python
+  and TypeScript prompts are byte-identical after substituting each language's interpolation.)
+- **The tolerant write is verified against the real PostgREST, not just a fake.** The deploy lands
+  before migration 0013, so `insert_questions` has to recognise the refusal. A live probe of the
+  actual database returned exactly what the code expects — HTTP 400, `code: PGRST204`, message
+  `Could not find the 'cognitive_level' column of 'questions' in the schema cache` — and the question
+  count on the seeded quiz was **5 before and 5 after**, so the probe itself wrote nothing.
+  `backend/tests/test_api.py` now also proves the retry stores the same questions untagged (nothing
+  else lost, no rollback) **and** that a refusal for any other reason is still reported once and
+  rolled back rather than retried.
 
 ### Browser verification, 2026-09-25 — the new code, driven for real
 

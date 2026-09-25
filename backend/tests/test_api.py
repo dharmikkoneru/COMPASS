@@ -31,6 +31,7 @@ def a_question(text: str = "What is a sampling frame?") -> dict[str, Any]:
         "explanation": "The material defines it in section 2.",
         "competency_tag": "Sampling Techniques",
         "difficulty": "medium",
+        "cognitive_level": "Application",
     }
 
 
@@ -45,8 +46,11 @@ class FakeDb:
         rpc_rows: list[dict[str, Any]] | None = None,
         materials: list[dict[str, Any]] | None = None,
         fail_insert: str | None = None,
+        unknown_column: bool = False,
     ) -> None:
         self.material = material
+        self.unknown_column = unknown_column
+        self.rejected_rows: list[list[dict[str, Any]]] = []
         self.quiz = (
             quiz if quiz is not None else {"id": "quiz-1", "title": "T", "question_count": 1}
         )
@@ -79,6 +83,17 @@ class FakeDb:
         if self.fail_insert == table:
             raise PostgrestError(
                 'new row violates row-level security policy for table "questions"', code="42501"
+            )
+        # What PostgREST answers when migration 0013 has not been applied yet:
+        # the column is not in its schema cache, so any row carrying it is
+        # refused, and the retry without it must succeed.
+        if self.unknown_column and table == "questions" and any(
+            "cognitive_level" in row for row in rows
+        ):
+            self.rejected_rows.append(rows)
+            raise PostgrestError(
+                "Could not find the 'cognitive_level' column of 'questions' in the schema cache",
+                code="PGRST204",
             )
         self.rows = rows
 
@@ -331,6 +346,92 @@ def test_generate_quiz_stores_the_quiz_and_its_questions(
     assert db.inserted["difficulty"] == "hard"
     assert [row["idx"] for row in db.rows] == [0, 1]
     assert db.rows[0]["quiz_id"] == "quiz-1"
+    # The level the model assigned is stored, not dropped.
+    assert db.rows[0]["cognitive_level"] == "Application"
+
+
+def test_a_database_without_the_cognitive_level_column_still_gets_the_quiz(
+    client: TestClient, as_officer, use_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Migration 0013 and this deploy are separate events, and the code lands first.
+
+    Losing the tag is a far smaller failure than losing a quiz the officer waited
+    a minute for, so the write is retried without the column instead of failing.
+    """
+    db = use_db(
+        FakeDb(
+            material={"id": "m1", "title": "Handbook", "raw_text": "material text"},
+            quiz={"id": "quiz-1", "title": "Sampling", "question_count": 2},
+            unknown_column=True,
+        )
+    )
+
+    async def fake_generate_json(api_key: str, prompt: str, *, schema, budget):
+        return (
+            {
+                "title": "Sampling",
+                "difficulty": "hard",
+                "questions": [a_question("one"), a_question("two")],
+            },
+            "gemini-3.6-flash",
+        )
+
+    monkeypatch.setattr(ai.gemini, "generate_json", fake_generate_json)
+
+    res = client.post(
+        "/api/ai/generate-quiz",
+        json={"materialId": "m1", "count": 2},
+        headers=AUTH,
+    )
+
+    assert res.status_code == 200
+    # The first attempt carried the tag and was refused for it...
+    assert len(db.rejected_rows) == 1
+    assert all("cognitive_level" in row for row in db.rejected_rows[0])
+    # ...and the retry stored the same questions without it, nothing else lost.
+    assert len(db.rows) == 2
+    assert all("cognitive_level" not in row for row in db.rows)
+    assert db.rows[0]["quiz_id"] == "quiz-1"
+    assert db.rows[0]["text"] == "one"
+    assert db.rows[1]["competency_tag"] == "Sampling Techniques"
+    # Nothing was rolled back: the quiz survives with its questions.
+    assert db.deleted == []
+
+
+def test_a_real_insert_failure_is_still_rolled_back_when_the_column_is_missing(
+    client: TestClient, as_officer, use_db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tolerant retry must not swallow a genuine refusal."""
+    db = use_db(
+        FakeDb(
+            material={"id": "m1", "title": "Handbook", "raw_text": "material text"},
+            quiz={"id": "quiz-1"},
+        )
+    )
+
+    async def fake_generate_json(api_key: str, prompt: str, *, schema, budget):
+        return ({"title": "T", "difficulty": "easy", "questions": [a_question()]}, "m")
+
+    monkeypatch.setattr(ai.gemini, "generate_json", fake_generate_json)
+
+    original = db.insert
+    calls = 0
+
+    async def refuse_questions(table: str, rows: list[dict[str, Any]]) -> None:
+        nonlocal calls
+        if table == "questions":
+            calls += 1
+            raise PostgrestError("permission denied for table questions", code="42501")
+        await original(table, rows)
+
+    monkeypatch.setattr(db, "insert", refuse_questions)
+
+    res = client.post("/api/ai/generate-quiz", json={"materialId": "m1"}, headers=AUTH)
+
+    assert res.status_code == 500
+    # A refusal for any other reason is reported once, not retried.
+    assert calls == 1
+    assert ("quizzes", {"id": "quiz-1"}) in db.deleted
 
 
 def test_an_empty_quiz_row_is_rolled_back_when_questions_fail(
