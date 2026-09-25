@@ -42,3 +42,9 @@ backend/.venv/
 
 # Supabase CLI state (written by `supabase login` / `link`) — per-machine.
 supabase/.temp/
+
+# Narration scratch (scripts/make_voiceover.py regenerates it on every run —
+# the mp3 segments and the mixed track). Tracking it meant every re-record
+# showed up as a dozen modified binaries in a diff that had nothing to do with
+# them.
+scripts/.vo_tmp/
