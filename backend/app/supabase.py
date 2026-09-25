@@ -41,6 +41,17 @@ class PostgrestError(Exception):
         """PostgREST's "expected one row, found none" code."""
         return self.code == "PGRST116"
 
+    @property
+    def is_unknown_column(self) -> bool:
+        """True when the write named a column this database does not have.
+
+        PGRST204 is PostgREST's schema cache refusing it and 42703 is Postgres
+        itself — both are what an unapplied migration looks like to a deploy
+        that shipped the code first. Callers still check the message for the
+        column they care about, because the code alone does not say which one.
+        """
+        return self.code in {"PGRST204", "42703"}
+
 
 class Postgrest:
     """PostgREST over HTTP, authorised by the current officer."""

@@ -22,6 +22,11 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Cognitive demand, Bloom-style, kept identical to
+// backend/app/quiz.py::COGNITIVE_LEVELS and migration 0013's check constraint —
+// an unlisted value would be refused by the database.
+const COGNITIVE_LEVELS = ['Recall', 'Application', 'Analysis'];
+
 const COMPETENCY_TAGS = [
   'Survey Methodology',
   'Sampling Techniques',
@@ -162,8 +167,17 @@ const responseSchema = {
           explanation: { type: 'STRING' },
           competency_tag: { type: 'STRING', enum: COMPETENCY_TAGS },
           difficulty: { type: 'STRING', enum: ['easy', 'medium', 'hard'] },
+          cognitive_level: { type: 'STRING', enum: COGNITIVE_LEVELS },
         },
-        required: ['text', 'options', 'correct_idx', 'explanation', 'competency_tag', 'difficulty'],
+        required: [
+          'text',
+          'options',
+          'correct_idx',
+          'explanation',
+          'competency_tag',
+          'difficulty',
+          'cognitive_level',
+        ],
       },
     },
   },
@@ -177,8 +191,8 @@ const responseSchema = {
 //
 // The scenario framing is the point of the assessment: an officer is asked what
 // to do in a situation grounded in the material, not to recite a definition.
-// The response schema is unchanged (no new field, so no migration): the scenario
-// lives in `text`, and `explanation` justifies the action.
+// The scenario lives in `text` and `explanation` justifies the action; the one
+// added field is `cognitive_level`, which migration 0013 stores.
 function buildPrompt(materialText: string, difficulty: string, count: number): string {
   return `You are an assessment designer for India's Ministry of Statistics and Programme Implementation (MoSPI).
 
@@ -199,6 +213,11 @@ Rules:
 - Tag each question with the single most relevant competency from this list:
   ${COMPETENCY_TAGS.map((t) => `"${t}"`).join(', ')}
 - Overall difficulty target: "${difficulty}". Individual question difficulty must also be one of easy/medium/hard.
+- Tag each question with the cognitive level it actually demands:
+  "Recall" when the material states the rule or figure and the officer must recognise it,
+  "Application" when a fact from the material has to be applied to a situation other than the one it was stated in, or
+  "Analysis" when the officer must compare parts of the material, diagnose a cause, or infer a conclusion.
+  Be strict: most scenario questions are "Application", and "Analysis" is earned only when more than one part of the material has to be weighed.
 - Include a one-paragraph explanation: which part of the material justifies the correct action, and why the most tempting wrong option fails.
 - Write in clear professional English suitable for serving officers.
 - Give the quiz a short descriptive title mentioning the material's topic.
@@ -211,6 +230,8 @@ ${materialText}
 """`;
 }
 
+type CognitiveLevel = 'Recall' | 'Application' | 'Analysis';
+
 interface GenQuestion {
   text: string;
   options: string[];
@@ -218,6 +239,8 @@ interface GenQuestion {
   explanation: string;
   competency_tag: string;
   difficulty: 'easy' | 'medium' | 'hard';
+  /** Null when the model supplied no usable level — the UI shows no chip then. */
+  cognitive_level: CognitiveLevel | null;
 }
 
 interface PostgrestLikeError {
@@ -233,6 +256,29 @@ interface PostgrestLikeError {
  * the problem — which is exactly how a missing RLS policy read as "Unexpected
  * error". Accepts anything, and names the migration behind an RLS refusal.
  */
+/**
+ * True when PostgREST refused a write because this database has no such column.
+ *
+ * PGRST204 is PostgREST's schema cache refusing it, 42703 is Postgres itself —
+ * both are what an unapplied migration looks like to a deploy that shipped the
+ * code first. The message has to name the column too, because the code alone
+ * does not say which one was missing.
+ */
+function isUnknownColumn(err: PostgrestLikeError, column: string): boolean {
+  const message = err.message ?? '';
+  if (!message.toLowerCase().includes(column.toLowerCase())) return false;
+  return (
+    err.code === 'PGRST204' || err.code === '42703' || /schema cache|does not exist/i.test(message)
+  );
+}
+
+/** A copy of a row with the cognitive level removed (the pre-0013 shape). */
+function withoutCognitiveLevel(row: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...row };
+  delete copy.cognitive_level;
+  return copy;
+}
+
 function writeErrorMessage(err: unknown): string {
   const plain = (err ?? {}) as PostgrestLikeError;
   const message =
@@ -246,6 +292,19 @@ function writeErrorMessage(err: unknown): string {
     return `${message} — the database is missing a policy from supabase/migrations (see 0003_questions_insert_policy.sql).`;
   }
   return message;
+}
+
+/**
+ * The canonical level name, or null when the model supplied no usable one.
+ *
+ * Case-insensitive because a model occasionally ignores an enum's spelling
+ * while still answering correctly; dropping "application" as unknown would hide
+ * a tag that is right. Null is the honest answer for anything else — the UI
+ * shows no chip rather than inventing a level for the question.
+ */
+function normalizeCognitiveLevel(value: unknown): CognitiveLevel | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  return COGNITIVE_LEVELS.find((level) => level.toLowerCase() === text) ?? null;
 }
 
 function validateQuestions(questions: unknown, count: number): GenQuestion[] {
@@ -263,6 +322,7 @@ function validateQuestions(questions: unknown, count: number): GenQuestion[] {
         explanation: String(q.explanation),
         competency_tag: COMPETENCY_TAGS.includes(tag) ? tag : COMPETENCY_TAGS[0],
         difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : 'medium',
+        cognitive_level: normalizeCognitiveLevel(q.cognitive_level),
       });
     }
     if (valid.length >= count) break;
@@ -514,8 +574,19 @@ Deno.serve(async (req) => {
       explanation: q.explanation,
       competency_tag: q.competency_tag,
       difficulty: q.difficulty,
+      cognitive_level: q.cognitive_level,
     }));
-    const { error: qErr } = await supabase.from('questions').insert(rows);
+
+    // The deploy that adds cognitive_level and the migration that creates the
+    // column are separate events, and the code reaches production first. If the
+    // column is not there yet, storing the questions untagged is a far smaller
+    // failure than losing a generation the officer waited a minute for — and an
+    // untagged question just shows no chip, like every pre-0013 row.
+    let inserted = await supabase.from('questions').insert(rows);
+    if (inserted.error && isUnknownColumn(inserted.error, 'cognitive_level')) {
+      inserted = await supabase.from('questions').insert(rows.map(withoutCognitiveLevel));
+    }
+    const qErr = inserted.error;
     if (qErr) {
       // The quiz row is already committed. Leaving it behind gives the officer an
       // empty quiz on the Materials page ("5 Qs →" opening to "This quiz has no

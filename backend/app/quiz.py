@@ -27,6 +27,12 @@ COMPETENCY_TAGS: tuple[str, ...] = (
 
 DIFFICULTIES = ("easy", "medium", "hard")
 
+# Cognitive demand, Bloom-style. Orthogonal to difficulty: difficulty is how
+# deeply the material has to be known, the level is what kind of thinking the
+# question asks for. Kept identical to the edge function's list and to migration
+# 0013's check constraint — an unlisted value would be refused by the database.
+COGNITIVE_LEVELS: tuple[str, ...] = ("Recall", "Application", "Analysis")
+
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "OBJECT",
     "properties": {
@@ -43,6 +49,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                     "explanation": {"type": "STRING"},
                     "competency_tag": {"type": "STRING", "enum": list(COMPETENCY_TAGS)},
                     "difficulty": {"type": "STRING", "enum": list(DIFFICULTIES)},
+                    "cognitive_level": {"type": "STRING", "enum": list(COGNITIVE_LEVELS)},
                 },
                 "required": [
                     "text",
@@ -51,6 +58,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                     "explanation",
                     "competency_tag",
                     "difficulty",
+                    "cognitive_level",
                 ],
             },
         },
@@ -80,6 +88,11 @@ Rules:
 - Tag each question with the single most relevant competency from this list:
   {tags}
 - Overall difficulty target: "{difficulty}". Individual question difficulty must also be one of easy/medium/hard.
+- Tag each question with the cognitive level it actually demands:
+  "Recall" when the material states the rule or figure and the officer must recognise it,
+  "Application" when a fact from the material has to be applied to a situation other than the one it was stated in, or
+  "Analysis" when the officer must compare parts of the material, diagnose a cause, or infer a conclusion.
+  Be strict: most scenario questions are "Application", and "Analysis" is earned only when more than one part of the material has to be weighed.
 - Include a one-paragraph explanation: which part of the material justifies the correct action, and why the most tempting wrong option fails.
 - Write in clear professional English suitable for serving officers.
 - Give the quiz a short descriptive title mentioning the material's topic.
@@ -90,6 +103,21 @@ LEARNING MATERIAL:
 \"\"\"
 {material_text}
 \"\"\""""
+
+
+def normalize_cognitive_level(value: Any) -> str | None:
+    """The canonical level name, or None when the model supplied no usable one.
+
+    Case-insensitive because a model occasionally ignores an enum's spelling
+    while still answering correctly; dropping "application" as unknown would
+    hide a tag that is right. None is the honest answer for anything else — the
+    UI shows no chip rather than inventing a level for the question.
+    """
+    text = str(value or "").strip().lower()
+    for level in COGNITIVE_LEVELS:
+        if text == level.lower():
+            return level
+    return None
 
 
 def validate_questions(questions: Any, count: int) -> list[dict[str, Any]]:
@@ -125,6 +153,7 @@ def validate_questions(questions: Any, count: int) -> list[dict[str, Any]]:
                     "explanation": str(explanation),
                     "competency_tag": tag if tag in COMPETENCY_TAGS else COMPETENCY_TAGS[0],
                     "difficulty": difficulty if difficulty in DIFFICULTIES else "medium",
+                    "cognitive_level": normalize_cognitive_level(question.get("cognitive_level")),
                 }
             )
         if len(valid) >= count:

@@ -39,6 +39,8 @@ let lastTransport: AiTransport | null = null;
 export function resetAiTransportForTests(): void {
   cachedConfig = null;
   lastTransport = null;
+  serviceStatus = 'unknown';
+  statusListeners.clear();
 }
 
 /** Read once, then cached: `import.meta.env` cannot change while the app runs. */
@@ -55,6 +57,126 @@ export function aiTransportConfig(): AiTransportConfig {
 }
 
 export const lastAiTransport = (): AiTransport | null => lastTransport;
+
+/**
+ * Whether the FastAPI service can answer right now.
+ *
+ * `edge` means no API is configured at all, so there is nothing to wake and the
+ * edge functions answer instantly. `waking` is the important one: Render's free
+ * tier sleeps after ~15 minutes idle and takes ~50 s to come back, and until
+ * now the app's only signal for that was a spinner that looked identical to a
+ * hang. Naming it is the whole difference between "broken" and "starting up".
+ */
+export type AiServiceStatus = 'unknown' | 'edge' | 'waking' | 'awake' | 'unreachable';
+
+let serviceStatus: AiServiceStatus = 'unknown';
+const statusListeners = new Set<(status: AiServiceStatus) => void>();
+
+export const aiServiceStatus = (): AiServiceStatus => serviceStatus;
+
+/**
+ * Observe the service status. Returns an unsubscribe function, so it can be
+ * returned straight from a `useEffect`.
+ */
+export function subscribeAiServiceStatus(listener: (status: AiServiceStatus) => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+function setServiceStatus(next: AiServiceStatus): void {
+  if (next === serviceStatus) return;
+  serviceStatus = next;
+  for (const listener of statusListeners) listener(next);
+}
+
+/**
+ * Fold a real response into the status. A status code *is* an answer, so the
+ * question is only whether it came from our app (awake) or from Render's
+ * gateway on the way to a container that is not up yet (still starting).
+ */
+function statusFromError(err: unknown): void {
+  if (!(err instanceof AiApiError)) return;
+  if (err.status === 0) {
+    setServiceStatus('unreachable');
+    return;
+  }
+  setServiceStatus(UNAVAILABLE_STATUS.has(err.status) ? 'waking' : 'awake');
+}
+
+/** How long a probe waits before calling the service "cold". */
+export const WARMUP_TIMEOUT_MS = 2500;
+/** Between probes when a connection is refused outright. */
+export const WARMUP_RETRY_DELAY_MS = 1500;
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One liveness request. Never rejects — a dead host is an answer, not an error.
+ *
+ * No `AbortSignal` here on purpose. Aborting would tidy up the timeout case, but
+ * the *request itself* is what wakes a sleeping container: cutting it short at
+ * 2.5 s can stop the very boot the warm-up exists to start. So the probe is
+ * left to finish in the background and reports the outcome when it lands.
+ */
+async function probeHealthz(base: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${base}/healthz`, { method: 'GET', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wake the API before it is needed, and say whether it is up.
+ *
+ * Called once when the app opens, so the ~50 s boot happens while the officer
+ * is reading the dashboard instead of while a judge waits for a quiz. A result
+ * of `'edge'` means no API is configured and there is nothing to wake.
+ *
+ * Resolves as soon as the answer is known: a fast reply is `'awake'`, and after
+ * {@link WARMUP_TIMEOUT_MS} with no reply the status becomes `'waking'` and the
+ * still-open request keeps booting the container. Nothing here blocks the UI.
+ */
+export async function warmAiService(options: { timeoutMs?: number; retries?: number } = {}) {
+  const { timeoutMs = WARMUP_TIMEOUT_MS, retries = 1 } = options;
+  const { baseUrl } = aiTransportConfig();
+
+  if (!baseUrl) {
+    setServiceStatus('edge');
+    return 'edge' as const;
+  }
+
+  const probe = probeHealthz(baseUrl);
+  const first = await Promise.race([
+    probe.then((ok) => (ok ? ('awake' as const) : ('down' as const))),
+    delay(timeoutMs).then(() => 'slow' as const),
+  ]);
+
+  if (first === 'slow') {
+    setServiceStatus('waking');
+    void probe.then((ok) => setServiceStatus(ok ? 'awake' : 'unreachable'));
+    return 'waking' as const;
+  }
+  if (first === 'awake') {
+    setServiceStatus('awake');
+    return 'awake' as const;
+  }
+
+  // Refused immediately: a just-restarted instance can refuse connections for a
+  // few seconds, so one retry before declaring it unreachable.
+  for (let i = 0; i < retries; i += 1) {
+    await delay(WARMUP_RETRY_DELAY_MS);
+    if (await probeHealthz(baseUrl)) {
+      setServiceStatus('awake');
+      return 'awake' as const;
+    }
+  }
+  setServiceStatus('unreachable');
+  return 'unreachable' as const;
+}
 
 /**
  * A failure raised by the FastAPI service.
@@ -181,15 +303,19 @@ export async function invokeAi<T>(
   try {
     const data = await callFastApi<T>(capability, body);
     lastTransport = 'fastapi';
+    // An answer is the only proof that matters, whatever the warm-up saw.
+    setServiceStatus('awake');
     return data;
   } catch (err) {
     if (!(err instanceof AiApiError) || !err.unavailable || !fallbackEnabled) {
       lastTransport = 'fastapi';
+      statusFromError(err);
       throw err;
     }
     console.warn(
       `COMPASS API unavailable (${err.message}) — retrying on the Supabase edge function.`,
     );
+    statusFromError(err);
     lastTransport = 'edge';
     return callEdge<T>(capability, body);
   }

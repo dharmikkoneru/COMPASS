@@ -283,3 +283,28 @@ uses. **Redeploy `embed-material` and `ask-material`** or the fallback path stay
   deploy site**. Vercel still deploys automatically on every push, so batch commits per roadmap
   item and ask before pushing.
 - Pending changes and their verified status live in **`BACKLOG.md`** at the repo root.
+
+## Resilience and the live demo (Sept 25, 2026)
+
+- **The timed live-demo script is `docs/run-of-show.md`** — the judge path, the measured timings
+  (generation 19.4 s warm, submit 1.65 s, cold start 33.7 s) and a recovery line for every failure
+  mode. Read it before presenting.
+- **The app now warms the AI service itself.** `StatusBanner` pings `GET /healthz` on every route, so
+  a slept Render instance boots while the officer reads the dashboard instead of while a judge
+  waits. The ~50 s cold start is *named in the UI* rather than shown as a bare spinner. Measured
+  baseline: **33.7 s** to first byte when the instance was asleep.
+- **A submission that never reaches a server is queued, not failed.** `lib/attemptQueue.ts` keeps it
+  in localStorage **per user id**; `usePendingAttempts` retries on sign-in and on the link coming
+  back, oldest first, through the same `apply_attempt` RPC. Only transport failures are queued — a
+  Postgres refusal is still reported, because a request the server will refuse forever must not
+  become a silent pile of unsent work. The review screen shows the score and says the mastery
+  movement will appear once it syncs; nothing is invented.
+- **Cognitive-level tags (D1).** Migration `0013_question_cognitive_level.sql` adds
+  `questions.cognitive_level`; run it in the SQL editor, then re-paste
+  `supabase/guest_setup_one_paste.sql` (v7) to tag the fifteen seeded questions. Until then
+  generation still works — both write paths drop the tag instead of failing — but no chips render.
+- **Rehearsing without drifting the demo:** `python .freebuff/guest_probe.py snapshot <name>` before,
+  `restore <name>` after. It uses the guest's own credentials over PostgREST, so RLS constrains it
+  exactly as it constrains the app — no service-role key. `status` prints what a judge would see.
+  The one-paste SQL in `supabase/guest_setup_one_paste.sql` is still the canonical reset (it also
+  repairs the account and its identities); the probe exists for rehearsals, not for judging.

@@ -105,6 +105,33 @@ def write_error_message(err: Any) -> str:
     return str(err) or "unknown database error"
 
 
+async def insert_questions(db: Postgrest, rows: list[dict[str, Any]]) -> bool:
+    """Store the generated questions, tolerating a database without 0013.
+
+    The deploy that adds `cognitive_level` and the migration that creates the
+    column are separate events, and the code reaches production first. If the
+    column is not there yet, storing the questions without the tag is a far
+    smaller failure than losing a generation the officer waited a minute for —
+    and the UI simply shows no chip for an untagged question, which is the same
+    state every pre-0013 row is in.
+
+    Returns True when the levels were stored. Raises the original error for
+    anything that is not a missing column, so the caller still rolls back.
+    """
+    try:
+        await db.insert("questions", rows)
+        return True
+    except PostgrestError as err:
+        if not (err.is_unknown_column and "cognitive_level" in err.message):
+            raise
+        untagged = [
+            {key: value for key, value in row.items() if key != "cognitive_level"}
+            for row in rows
+        ]
+        await db.insert("questions", untagged)
+        return False
+
+
 async def load_material(db: Postgrest, material_id: str, columns: str) -> dict[str, Any]:
     """The officer's own material, or a 404 that says so.
 
@@ -177,12 +204,13 @@ async def generate_quiz(request: QuizRequest, user: User) -> dict[str, Any]:
                 "explanation": question["explanation"],
                 "competency_tag": question["competency_tag"],
                 "difficulty": question["difficulty"],
+                "cognitive_level": question["cognitive_level"],
             }
             for index, question in enumerate(questions)
         ]
 
         try:
-            await db.insert("questions", rows)
+            await insert_questions(db, rows)
         except PostgrestError as err:
             # The quiz row is already committed. Leaving it behind shows the
             # officer an empty quiz on the Materials page, so roll it back

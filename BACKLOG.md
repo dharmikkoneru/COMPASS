@@ -5,7 +5,9 @@ without re-deriving anything. **Read this before starting work.** Operational pr
 deploy, reset the demo, re-render the video) live in `freebuff/run.md` — this file is the
 "what's next / what's known" list.
 
-Last updated: **2026-09-24**, after the roadmap batch B0–B2 + blueprint item 4 (C1) shipped — and after the post-push verification found three live-deployment blockers (section H).
+Last updated: **2026-09-25**, after the resilience batch (section I), the cognitive-level tagging the
+slide used to only claim (D1, now built) and the human-review claim it now honestly marks as planned
+(D2). Pushed in one batch: Vercel and Render redeploy from git, Netlify stays manual.
 
 Legend: **Done** · **Queued** (decided, next up) · **Ready** (decided, not started) ·
 **Proposed** (needs a decision) · **Don't claim** (out of scope on purpose)
@@ -85,15 +87,36 @@ it is idempotent and doubles as the between-judges reset.
 
 ---
 
-## D. Deck claims the code doesn't back — build or reword
+## D. Deck claims the code didn't back — both resolved 2026-09-25
 
-- **D1 · Bloom / cognitive-level tagging.** Slide 4 claims every question is tagged
-  Recall / Application / Analysis. There is **no such field** anywhere — questions carry
-  `competency_tag` and `easy|medium|hard` only. Either add `cognitive_level` to both generators
-  plus a chip on the review screen, or reword the slide.
-- **D2 · NSSTA human-in-the-loop review.** Slide 4 claims trainers review and approve AI questions
-  before they go live. There is **no approval state and no review UI**. Either build a minimal
-  `draft → approved` flag with a review queue reusing the admin page, or mark it "planned".
+- **D1 · Bloom / cognitive-level tagging — BUILT** (the slide is now true, so it was not reworded).
+  Migration `0013_question_cognitive_level.sql` adds `questions.cognitive_level text` with a check
+  constraint for `Recall | Application | Analysis`; `COGNITIVE_LEVELS` is declared in
+  `backend/app/quiz.py`, in the edge function, and in `src/lib/cognitive.ts`, and all three lists
+  match the constraint. Both generators now require the field in their response schema and ask for
+  it in the prompt — **and the two prompts are still byte-identical**, which is now *verified*
+  rather than eyeballed (`.freebuff/check_quiz_contract.py`, see the caveat in §I). The UI shows a
+  chip while answering and in the review list, with a tooltip explaining what each level means.
+  Deliberate honesty rules: a misspelled level (`"analysis"`) is normalised, but an unrecognised one
+  (`"Evaluation"`) becomes **null, never a guess**, and a null level renders **no chip** — which is
+  also the state of every pre-0013 row.
+- **D2 · NSSTA human-in-the-loop review — REWORDED as planned**, not built. Slide 4's heading now
+  reads "Expert Approval Workflow (Roadmap)", its body opens "Planned next:", and the summary line
+  reads "keeps a person, not the model, in control once that step ships". There is still no approval
+  state and no review UI — do not claim one on stage.
+
+**Needs the user, in this order:** apply `0013` in the Supabase SQL editor, then re-paste
+`guest_setup_one_paste.sql` (**v7**, which also tags the 15 seeded questions `Recall` — they honestly
+are recall-style — so the demo shows the tag without needing a live generation). Generation keeps
+working in between: both write paths detect a missing column and store the questions untagged rather
+than failing a request the officer waited a minute for.
+
+**Deck edit method (F5 said this needed a venv — it does not):** `.freebuff/reword_slide4.py` unzips
+`COMPASS_final.pptx`, rewrites the run text in `ppt/slides/slide4.xml`, and copies every other member
+across byte-for-byte — verified afterwards that slides 1/2/3/5/6 are hash-identical and the archive
+still opens. Backup: `COMPASS_final.pre-d2-reword.pptx`. **Nobody has looked at slide 4 in PowerPoint
+since**: the new sentence is a little longer than the one it replaced, so check it for overflow. The
+`Team ID-` field on slide 1 is still blank — the user is filling that in themselves.
 
 ---
 
@@ -114,11 +137,14 @@ maintenance (CI gates, idempotent migrations), cloud scaling (managed Supabase +
 **Still open:** load balancing is provider-managed only (we built failover, not balancing);
 high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
 
-- **E1 · PWA-lite offline tolerance** *(Ready — largest item)*. Service worker caching the app
-  shell, opened materials readable offline, a generated quiz completable offline with the attempt
-  queued and submitted on reconnect, honestly labelled in the UI. Half-solves internet dependency.
-- **E2 · Cold-start killer** *(Ready — small)*. Fire-and-forget warmup ping to the API when the app
-  opens, plus a visible "AI service waking — fallback ready" state instead of a silent ~50 s stall.
+- **E1 · PWA-lite offline tolerance** *(Partly done 2026-09-25 — see section I)*. Built: attempts
+  **queued** on the device when a submission never reaches a server, with an honest review screen
+  and a status strip that retries on reconnect. **Still open:** a service worker caching the app
+  shell, and opened materials readable offline — so a *reload* with no network still fails. The AI
+  half is impossible by design and stays out of any claim.
+- **E2 · Cold-start killer** *(Done 2026-09-25 — see section I)*. The app pings `/healthz` on load
+  and names the cold start in the UI instead of leaving a bare spinner. Measured cold start to work
+  against: **33.7 s**, so a cold first generation costs ~55 s against ~20 s warm.
 - **E3 · External uptime ping** *(Proposed)*. A scheduled ping of `/healthz` would make the
   "24/7 monitoring" line literally true.
 
@@ -126,14 +152,15 @@ high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
 
 ## F. Demo & ops housekeeping
 
-- **F1 · Guest baseline reset — now overdue, and it did not do what we advertised.**
-  Re-run `supabase/guest_setup_one_paste.sql` whenever the demo has been quizzed into a different
-  state. Measured today, the guest holds **14 attempts** (seeded: 6) and **6 quizzes** (seeded: 3) —
-  my earlier "8 attempts" was written from memory and was wrong, and the extra quizzes come from
-  generations in earlier sessions. PART 3 could not remove those quizzes because its inserts are
-  `ON CONFLICT DO NOTHING`, which only ever adds: **v5 of the script now deletes the guest's own
-  quizzes and materials outside the seeded set** (the cascade takes their questions and attempts),
-  so "re-run it for the pristine demo" is finally true.
+- **F1 · Guest baseline reset — now genuinely one-paste (v6).** Re-run
+  `supabase/guest_setup_one_paste.sql` whenever the demo has been quizzed into a different state.
+  Verified back to pristine on 2026-09-24: materials 3 · quizzes 3 · questions 15 · attempts 6
+  (scores 5,3,4,3,5,4; newest 97 h old) · mastery 8 (82/78/70/63/55/50/42/35) · recommendations 5.
+  Two things the script could NOT do before today's fixes: v5 deletes the guest's own quizzes and
+  materials outside the seeded set (its inserts are `ON CONFLICT DO NOTHING`, which only ever adds —
+  the account had drifted to 6 quizzes / 14 attempts), and **v6 prunes recommendations** outside the
+  five seeded courses before re-asserting them (demo enrolments had grown it to 12). Both deletes
+  cascade or are guest-owned; nothing belonging to a real officer is touched.
 - **F2 · Netlify is manual-deploy only.** The user set the "Ignored build step" to `exit 0`, so git
   pushes no longer build there. To refresh it: build locally, then **drag `dist/`** onto the site's
   Deploys tab (no build minutes) or **Trigger deploy → Clear cache and deploy site**. Netlify build
@@ -144,10 +171,107 @@ high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
   Netlify too, or keep the edge functions as the fallback path).
 - **F4 · Untracked files.** `COMPASS_final.pptx` plus five `.pre-*` backups, and
   `supabase/migrations/0012_*.sql`, are all untracked. Decide: commit the final deck and the
-  migration, delete the backups, or keep the deck out of the repo.
-- **F5 · Deck edits need tooling.** `python-pptx` is **not** installed on this machine (the earlier
+  migration, delete the backups, or keep the deck out of the repo.- **F5 · Deck edits need tooling.** `python-pptx` is **not** installed on this machine (the earlier
   deck edits left no script behind). A programmatic deck edit needs a throwaway local venv, or the
-  deck gets edited in PowerPoint by hand.
+deck gets edited in PowerPoint by hand. (The deck's XML can be *read* with the standard library —
+  `zipfile` + a regex over `ppt/slides/slideN.xml` — which is how F6 was confirmed.)
+- **F6 · The title slide's Team ID is blank.** Slide 1 reads `Team ID-` with nothing after it, in the
+  photo *and* in the file. **Needs the team's actual ID** — only the team can supply it. The other
+  four fields (Problem Statement ID SIH26101, Theme Smart Education, PS Category Software, Team Name
+  Build Horizon) are correct and match the official slide.
+- **F7 · Run-of-show + a rehearsal tool that leaves no trace.** `docs/run-of-show.md` is the timed
+  live-demo script with measured numbers and recovery lines. `.freebuff/guest_probe.py`
+  (`status`/`snapshot`/`restore`) checkpoints and rolls back the guest account over PostgREST using
+  the guest's own credentials — so a rehearsal no longer drifts the demo (verified: restored to
+  3/3/15/6/8-mastery/5-recommendations exactly). It is gitignored; promote it to `scripts/` if
+  rehearsals become routine.
+
+---
+
+## I. Resilience batch — queue, warm-up, status strip (2026-09-25)
+
+Built for the "venue wifi fails mid-demo" risk. **In the tree and green; NOT pushed**, so none of it
+is on the deployed hosts yet.
+
+- **Attempts survive a dead network.** `src/lib/attemptQueue.ts` keeps failed submissions in
+  localStorage **per user id** (the shared guest account must never see a real officer's unsent
+  work), capped at 20, drop-oldest. `src/hooks/usePendingAttempts.ts` flushes them oldest-first
+  through the **same `apply_attempt` RPC** as the online path, so a synced attempt is
+  indistinguishable from one that never left the device. `QuizRunner` queues only genuine transport
+  failures (`isOfflineError`) — a Postgres refusal is still shown as an error, because queueing
+  something the server will refuse forever turns one clear error into a silent pile of unsent work.
+  The review screen then shows the real score with **no invented mastery movement**, plus "will
+  submit itself when you are back online".
+- **`src/components/StatusBanner.tsx`** renders nothing when all is well, and otherwise says offline
+  / syncing / synced / *AI service starting (≈1 min)* / *API not responding, using the backup path*.
+  It is also what warms the API (the one component mounted on every route).
+- **`src/lib/ai.ts` gained a service status** (`unknown|edge|waking|awake|unreachable`), a
+  `subscribeAiServiceStatus` store, and `warmAiService()`. Two decisions worth keeping: the probe is
+  **never aborted** (the open request is what boots a sleeping container, so cutting it at 2.5 s can
+  stop the very boot it exists to start), and real call outcomes fold back into the status, so the
+  banner stays true even if the warm-up was stale.
+- **Generation UX:** `Materials.tsx` keeps the failed request and offers **Try again** unchanged, and
+  counts seconds, explaining a long wait by whether the service was waking. `useMaterials` now owns
+  `generatingSince` — the timestamp belongs where the transition happens.
+- **Tests:** **142/142** (`connectivity.test.ts`, `attemptQueue.test.ts`, and five new
+  `warmAiService` cases). `tsc -b` clean, oxlint **0 warnings 0 errors** — the four new warnings the
+  first draft produced were all real `setState`-in-effect smells, fixed by deriving (`showSynced`
+  from `syncedCount`), by `useSyncExternalStore` (`useOnline`), and by a render clock (`GeneratingNote`).
+- **Bug the tests caught:** `navigator.onLine` is `undefined` in a non-browser environment, so
+  `browserIsOnline()` returned `undefined` instead of a boolean. Now only an explicit `=== false`
+  counts as offline.
+- **Caveat on the backend tests:** `pytest` is still not installed here, so the new assertions in
+  `backend/tests/test_quiz.py` (schema enum, prompt, level normalisation) were exercised by
+  `.freebuff/check_quiz_contract.py` instead, which imports `app.quiz` directly and also proves the
+  Python and TypeScript prompts are byte-identical. **CI's `api` job is what runs the real suite** —
+  check it before believing the backend is green.
+
+### Browser verification, 2026-09-25 — the new code, driven for real
+
+Unit tests cannot show that the queue is reachable from the UI or that the banner reacts to a
+failure, so the whole cycle was driven in a real browser against the local dev server:
+
+- `window.fetch` was patched to reject **only** `rpc/apply_attempt`, with `TypeError: Failed to
+  fetch` (Chrome's own wording). Submitting then produced **no red error**: the review screen showed
+  the score, the amber *"saved on this device and will submit itself"* line, *"Mastery movement will
+  appear here once the attempt syncs."*, and a link reading *Back to dashboard* — and
+  `compass.pendingAttempts.<user_id>` appeared in localStorage.
+- The status strip rendered **"1 attempt is saved on this device and will sync automatically."** with
+  a **Sync now** button.
+- Restoring `fetch` and pressing **Sync now** submitted the attempt **for real** (a `0/5` row did
+  appear in the database), removed the storage key, and switched the strip to **"1 saved attempt
+  synced — your mastery is updated."** So the flush is the same RPC on the same data, not a lookalike.
+- Dispatching a genuine `offline` event swapped in the red strip (*"You're offline. Screens you have
+  already opened keep working…"*), and `online` cleared it — the `useSyncExternalStore` wiring is
+  live, not merely correct on paper.
+- The account was restored to the pristine baseline again afterwards (3/3/15/6 · 8 mastery rows · 5
+  recommendations, every value unchanged).
+
+### Dress rehearsal, 2026-09-25 — measured on the deployed build
+
+The judge path was walked end to end on `https://compass-tawny-five.vercel.app` as the guest, with
+the account snapshotted first and **restored to the exact pristine baseline afterwards** (3 materials
+· 3 quizzes · 15 questions · 6 attempts · 8 mastery rows · 5 recommendations — verified identical).
+
+- Guest entry is **one click**, no password. Dashboard read 59% / 4 gaps / Field Ops 82% / 6 attempts.
+- **Generation: 19.4 s** warm, served by the **Render FastAPI** path (`POST
+  https://compass-api-fm5s.onrender.com/api/ai/generate-quiz → 200`, CORS preflight 200 — section H
+gates hold). New quiz landed as *"Consumer Price Index Field Operations and Quality Control"* with 5
+  stored questions.
+- **Blueprint item 4 holds on the deployed build:** the fresh question was a workplace decision
+  ("a field supervisor… what proportion of the submitted schedules must the supervisor verify?"),
+  not a definition — a second independent confirmation of C1.
+- **Submission: 463 ms** for the pre-submission profile read + **1.19 s** for `apply_attempt`. Result
+  screen showed `63%→78% ▲`, `82%→49% ▼`, `42%→25% ▼`, `50%→70% ▲`, `55%→33% ▼` and readiness
+  **59% → 55%** — every value exactly `0.6·old + 0.4·(ratio·100)`; the dashboard then agreed (55%,
+  4 gaps, the attempt at the top of the history).
+- iGOT rendered 5 gap-ranked courses including **ENROLLED 35%** and **IN PROGRESS 60%**. Console clean.
+- **The one real stall:** a slept Render instance costs **33.7 s** to first byte, so the day's first
+  generation is ~55 s. That is exactly what the batched warm-up fixes — after the next push.
+- A timed **run-of-show with these numbers and recovery lines is in `docs/run-of-show.md`**.
+- Tool used: `.freebuff/guest_probe.py` (gitignored) — `status` / `snapshot <name>` / `restore
+  <name>` over PostgREST with the guest's own credentials, so a rehearsal can no longer leave the
+demo drifted. Worth promoting to `scripts/` if rehearsals become routine.
 
 ---
 

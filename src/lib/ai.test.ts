@@ -18,10 +18,13 @@ vi.mock('./supabase', () => ({
 
 import {
   AiApiError,
+  aiServiceStatus,
   aiTransportConfig,
   invokeAi,
   lastAiTransport,
   resetAiTransportForTests,
+  subscribeAiServiceStatus,
+  warmAiService,
 } from './ai';
 
 const json = (body: unknown, status = 200) =>
@@ -186,5 +189,108 @@ describe('invokeAi', () => {
       message: 'GEMINI_API_KEY secret is not set',
     });
     expect(lastAiTransport()).toBe('edge');
+  });
+
+  it('records an unreachable API so the banner can say so', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    invoke.mockResolvedValue({ data: { answer: 'from deno' }, error: null });
+
+    await invokeAi('ask-material', {});
+    expect(aiServiceStatus()).toBe('unreachable');
+  });
+
+  it('records a gateway 503 as still starting, not as a diagnosis', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 503 })));
+    invoke.mockResolvedValue({ data: { answer: 'from deno' }, error: null });
+
+    await invokeAi('ask-material', {});
+    expect(aiServiceStatus()).toBe('waking');
+  });
+
+  it('records a handled 400 as awake, because it answered', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: 'Ask a question first' }, 400)));
+
+    await expect(invokeAi('ask-material', {})).rejects.toThrow('Ask a question first');
+    expect(aiServiceStatus()).toBe('awake');
+  });
+});
+
+describe('warmAiService', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    resetAiTransportForTests();
+    getSession.mockReset();
+    invoke.mockReset();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('never probes when no API is configured — the edge functions never sleep', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(warmAiService()).resolves.toBe('edge');
+    expect(aiServiceStatus()).toBe('edge');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('calls an answering service awake', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    const fetchMock = vi.fn().mockResolvedValue(json({ status: 'ok' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(warmAiService()).resolves.toBe('awake');
+    expect(aiServiceStatus()).toBe('awake');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://compass-api.onrender.com/healthz');
+  });
+
+  it('calls a still-booting container waking, and never abandons the probe', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    let finish: (res: Response) => void = () => {};
+    const booting = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(booting));
+
+    // The 2.5 s wait is what a cold Render instance looks like: no reply yet.
+    await expect(warmAiService({ timeoutMs: 10 })).resolves.toBe('waking');
+    expect(aiServiceStatus()).toBe('waking');
+
+    // Cutting the request short would abort the very boot it exists to start,
+    // so the promise stays open and the status follows it when it lands.
+    finish(json({ status: 'ok' }));
+    for (let i = 0; i < 20 && aiServiceStatus() !== 'awake'; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(aiServiceStatus()).toBe('awake');
+  });
+
+  it('retries once before declaring a refused host unreachable', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(warmAiService()).resolves.toBe('unreachable');
+    // A just-restarted instance refuses connections for a few seconds.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(aiServiceStatus()).toBe('unreachable');
+  });
+
+  it('notifies subscribers only when the status actually changes', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://compass-api.onrender.com');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ status: 'ok' })));
+    const seen: string[] = [];
+    const unsubscribe = subscribeAiServiceStatus((s) => seen.push(s));
+
+    await warmAiService();
+    await warmAiService();
+    unsubscribe();
+    await warmAiService();
+
+    expect(seen).toEqual(['awake']);
+    expect(aiServiceStatus()).toBe('awake');
   });
 });

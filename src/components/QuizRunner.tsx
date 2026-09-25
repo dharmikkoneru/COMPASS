@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabase';
 import { COMPETENCY_SHORT, GAP_THRESHOLD, displayMastery } from '../lib/competencies';
 import { overallReadiness } from '../lib/gapEngine';
 import { errorMessage } from '../lib/errors';
+import { browserIsOnline, isOfflineError } from '../lib/connectivity';
+import {
+  COGNITIVE_HINT,
+  COGNITIVE_TONE,
+  cognitiveLevel,
+  type CognitiveLevel,
+} from '../lib/cognitive';
+import { usePendingAttempts } from '../hooks/usePendingAttempts';
 import type { AttemptResult, CompetencyMastery, MasteryDelta, Question, Quiz } from '../lib/types';
 
 interface TagTally {
@@ -20,9 +28,35 @@ interface AttemptSummary {
   /** Null when the pre-submission snapshot could not be read — see submit(). */
   readinessBefore: number | null;
   readinessAfter: number | null;
+  /**
+   * True when the network dropped mid-submit and the attempt was saved on the
+   * device instead (lib/attemptQueue). The score is real; the mastery movement
+   * is not known yet, so none is claimed.
+   */
+  queued: boolean;
 }
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+/**
+ * What this question asks the officer to do — Recall, Application or Analysis.
+ *
+ * The deck claims every question carries its cognitive depth, and until this
+ * existed nothing in the app ever showed it. Renders nothing for a question
+ * without a level (every row written before migration 0013), because an
+ * invented tag would be worse than a missing one.
+ */
+function CognitiveChip({ level }: { level: CognitiveLevel | null }) {
+  if (!level) return null;
+  return (
+    <span
+      className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wide ${COGNITIVE_TONE[level]}`}
+      title={COGNITIVE_HINT[level]}
+    >
+      {level}
+    </span>
+  );
+}
 
 /**
  * `33% → 60% ▲` for one competency.
@@ -64,6 +98,7 @@ export default function QuizRunner({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AttemptSummary | null>(null);
+  const { enqueue } = usePendingAttempts();
 
   const total = questions.length;
   const current = questions[idx];
@@ -79,23 +114,27 @@ export default function QuizRunner({
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    try {
-      let score = 0;
-      const tallies = new Map<string, TagTally>();
-      for (const q of questions) {
-        const chosen = answers[q.idx];
-        const ok = chosen === q.correct_idx;
-        if (ok) score += 1;
-        const t = tallies.get(q.competency_tag as string) ?? {
-          tag: q.competency_tag as string,
-          correct: 0,
-          total: 0,
-        };
-        t.total += 1;
-        if (ok) t.correct += 1;
-        tallies.set(t.tag, t);
-      }
 
+    // Scoring is pure arithmetic over state that is already local, so it runs
+    // before the network is touched. That matters for the offline path below:
+    // the tally is exactly what a failed submission queues.
+    let score = 0;
+    const tallies = new Map<string, TagTally>();
+    for (const q of questions) {
+      const chosen = answers[q.idx];
+      const ok = chosen === q.correct_idx;
+      if (ok) score += 1;
+      const t = tallies.get(q.competency_tag as string) ?? {
+        tag: q.competency_tag as string,
+        correct: 0,
+        total: 0,
+      };
+      t.total += 1;
+      if (ok) t.correct += 1;
+      tallies.set(t.tag, t);
+    }
+
+    try {
       // Snapshot the profile *before* the RPC rewrites it: the rows it returns
       // are the post-attempt values, and "33% → 60%" needs both halves.
       const { data: snapshotRows } = await supabase
@@ -136,8 +175,32 @@ export default function QuizRunner({
               ...updated,
             ])
           : null,
+        queued: false,
       });
     } catch (err) {
+      // A submission that never reached a server is not a failure to report —
+      // it is work to keep. Queue it and show the score, without inventing a
+      // mastery movement that has not happened yet.
+      if (isOfflineError(err) || !browserIsOnline()) {
+        const stored = enqueue({
+          quizId: quiz.id,
+          // The RPC takes question idx → option; JSON keys are strings either way.
+          answers: Object.fromEntries(Object.entries(answers)),
+          score,
+          total,
+        });
+        if (stored) {
+          setResult({
+            score,
+            perTag: [...tallies.values()],
+            deltas: [],
+            readinessBefore: null,
+            readinessAfter: null,
+            queued: true,
+          });
+          return;
+        }
+      }
       setError(errorMessage(err, 'Submission failed'));
     } finally {
       setSubmitting(false);
@@ -165,8 +228,15 @@ export default function QuizRunner({
             {pct}%
           </p>
           <p className="text-gray-400 mt-2">
-            {result.score} of {total} correct — mastery updated across your competency profile.
+            {result.score} of {total} correct.
           </p>
+          {result.queued && (
+            <p className="text-sm text-amber-200/90 mt-3 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
+              The connection dropped, so this attempt has not reached the platform yet. It is saved
+              on this device and will submit itself — updating your mastery — as soon as you are back
+              online.
+            </p>
+          )}
           {result.readinessBefore !== null && result.readinessAfter !== null && (
             <p className="text-sm text-gray-300 mt-3">
               Overall readiness <span className="text-gray-400">{result.readinessBefore}%</span>{' '}
@@ -189,6 +259,13 @@ export default function QuizRunner({
           <p className="text-xs text-gray-500 mt-1 mb-3">
             Mastery is a 60/40 blend of what you already knew and how you did on this attempt.
           </p>
+          {/* The deltas come from the RPC's own rows, so a queued attempt has
+              none. Say why, rather than showing a silent, delta-less list. */}
+          {result.queued && (
+            <p className="text-xs text-amber-300/90 mb-3">
+              Mastery movement will appear here once the attempt syncs.
+            </p>
+          )}
           <ul className="space-y-2">
             {perTag.map((t) => {
               const ratio = Math.round((t.correct / t.total) * 100);
@@ -241,6 +318,11 @@ export default function QuizRunner({
                       <p className="text-sm text-gray-100 leading-relaxed">
                         {q.idx + 1}. {q.text}
                       </p>
+                      {cognitiveLevel(q.cognitive_level) && (
+                        <p className="mt-1.5">
+                          <CognitiveChip level={cognitiveLevel(q.cognitive_level)} />
+                        </p>
+                      )}
                       <p className="text-xs mt-1.5 text-gray-400">
                         Your answer:{' '}
                         <span className={correct ? 'text-green-300' : 'text-red-300'}>
@@ -275,7 +357,7 @@ export default function QuizRunner({
             to="/"
             className="flex-1 text-center btn-gradient text-white px-4 py-2 rounded"
           >
-            View updated dashboard →
+            {result.queued ? 'Back to dashboard →' : 'View updated dashboard →'}
           </Link>
           <Link
             to="/recommendations"
@@ -313,7 +395,7 @@ export default function QuizRunner({
       </div>
 
       <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 shadow-md">
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="bg-blue-900 text-blue-300 text-xs font-bold px-2 py-1 rounded uppercase">
             {COMPETENCY_SHORT[current.competency_tag as keyof typeof COMPETENCY_SHORT] ??
               current.competency_tag}
@@ -321,6 +403,7 @@ export default function QuizRunner({
           <span className="bg-gray-700 text-gray-300 text-xs font-bold px-2 py-1 rounded uppercase">
             {current.difficulty}
           </span>
+          <CognitiveChip level={cognitiveLevel(current.cognitive_level)} />
         </div>
 
         <p className="text-gray-100 text-lg leading-relaxed mb-6">{current.text}</p>

@@ -58,6 +58,14 @@ export function useMaterials() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
+  /**
+   * When the running generation started, in epoch ms.
+   *
+   * Owned here because here is where the change happens: a page that derived it
+   * from `generating` would need an effect to notice the transition, and a
+   * generation is exactly the kind of request that must not appear to hang.
+   */
+  const [generatingSince, setGeneratingSince] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +108,7 @@ export function useMaterials() {
   const createQuiz = useCallback(
     async (material: Material, difficulty: QuizDifficulty, count: number): Promise<Quiz | null> => {
       setGenerating(material.id);
+      setGeneratingSince(Date.now());
       setError(null);
       try {
         const quiz = await invokeAi<Quiz>('generate-quiz', {
@@ -118,6 +127,7 @@ export function useMaterials() {
         return null;
       } finally {
         setGenerating(null);
+        setGeneratingSince(null);
       }
     },
     [],
@@ -138,6 +148,7 @@ export function useMaterials() {
     loading,
     error,
     generating,
+    generatingSince,
     refresh,
     addMaterial,
     createQuiz,

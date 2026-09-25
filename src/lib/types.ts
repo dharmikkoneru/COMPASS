@@ -48,6 +48,11 @@ export interface Question {
   explanation: string | null;
   competency_tag: Competency | string;
   difficulty: string;
+  /**
+   * Bloom-style cognitive demand (migration 0013). Null or absent for every
+   * question generated before that migration, which the UI renders as no chip.
+   */
+  cognitive_level?: string | null;
 }
 
 export interface CompetencyMastery {
@@ -120,6 +125,7 @@ export interface GeneratedQuestion {
   explanation: string;
   competency_tag: string;
   difficulty: 'easy' | 'medium' | 'hard';
+  cognitive_level?: string | null;
 }
 
 export interface GeneratedQuiz {

@@ -1,5 +1,18 @@
 -- ═══════════════════════════════════════════════════════════════
--- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v5
+-- COMPASS — GUEST DEMO SETUP (ALL-IN-ONE, ONE PASTE)  ·  v7
+--
+-- v7 CHANGE: cognitive-level tagging (migration 0013). PART 3.3b adds the
+-- column if the migration has not been run here yet, then tags the fifteen
+-- seeded questions 'Recall' — which they honestly are — so the demo shows the
+-- tag on every question without needing a live generation. PART 4b also now
+-- verifies that all fifteen carry a level.
+--
+-- v6 CHANGE: recommendations accumulated strays. The 3.7 insert is
+-- idempotent for ITS five rows (ON CONFLICT (user_id, course_id)), but a
+-- course enrolled during a demo inserts a NEW recommendation row that no
+-- later re-run removed — the live account showed 12 against a seeded 5.
+-- PART 3.7 now deletes the guest's recommendations outside the seeded
+-- courses before re-asserting the five.
 --
 -- v5 CHANGE: "re-run it to get the pristine demo back" was not true.
 -- PART 3's seeds use ON CONFLICT DO NOTHING, which cannot remove a quiz
@@ -354,6 +367,28 @@ INSERT INTO public.questions (id, quiz_id, idx, text, options, correct_idx, expl
 'Data Indexing & Storage', 'medium')
 ON CONFLICT (id) DO NOTHING;
 
+-- ── 3.3b Cognitive level for the seeded questions ────────────────
+-- Migration 0013 is the authoritative schema change; this guard only keeps the
+-- one-paste reset self-contained, so it cannot fail on a database where the
+-- migration has not been run yet.
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS cognitive_level text;
+
+-- Every one of the fifteen seeded questions is recall-style — "What is the base
+-- year…", "How many dimensions…", "Which round…" — so they are tagged Recall
+-- rather than dressed up as something deeper. They are deliberately the
+-- pre-scenario examples: the deck's own "shallow assessment" risk, made visible
+-- next to a freshly generated quiz, which carries the levels the model assigns.
+-- Only null levels are filled, so a level that came from the model is never
+-- overwritten.
+UPDATE public.questions
+   SET cognitive_level = 'Recall'
+ WHERE quiz_id IN (
+         'd0e10000-0000-4000-8000-00000000b001',
+         'd0e10000-0000-4000-8000-00000000b002',
+         'd0e10000-0000-4000-8000-00000000b003'
+       )
+   AND cognitive_level IS NULL;
+
 -- ── 3.4 Attempts (spread over the last 2 weeks) ─────────────────
 INSERT INTO public.attempts (id, quiz_id, user_id, answers, score, total, status, submitted_at) VALUES
 ('d0e10000-0000-4000-8000-00000000d001', 'd0e10000-0000-4000-8000-00000000b001', uid,
@@ -398,6 +433,19 @@ INSERT INTO public.igot_courses (id, external_id, title, provider, duration_hrs,
 ON CONFLICT (id) DO NOTHING;
 
 -- ── 3.7 Recommendations (gap-driven, guest-owned) ───────────────
+-- Prune first: a demo enrolment in a non-seeded course leaves a row behind
+-- (the upsert below covers only its own five course ids), and those strays
+-- are exactly what made the demo page grow between runs.
+DELETE FROM public.recommendations
+ WHERE user_id = uid
+   AND course_id NOT IN (
+     'e0000001-0000-0000-0000-000000000001',
+     'e0000002-0000-0000-0000-000000000002',
+     'e0000003-0000-0000-0000-000000000003',
+     'e0000004-0000-0000-0000-000000000004',
+     'e0000005-0000-0000-0000-000000000005'
+   );
+
 INSERT INTO public.recommendations (user_id, course_id, competency_tag, reason, status, progress, created_at) VALUES
 (uid, 'e0000004-0000-0000-0000-000000000004', 'Statistical Computing',
 'Mastery at 42 percent — below the 60 percent readiness threshold. This course covers R programming for survey data analysis.',
@@ -448,6 +496,12 @@ select 'mastery', count(*) from public.competency_mastery
 union all
 select 'recommendations', count(*) from public.recommendations
  where user_id = 'd0e10000-0000-4000-8000-000000000001'
+union all
+-- 4b-ii. Of those 15 questions, this many carry a cognitive level (expect 15).
+select 'questions tagged with a level', count(*) from public.questions q
+ join public.quizzes z on z.id = q.quiz_id
+ where z.created_by = 'd0e10000-0000-4000-8000-000000000001'
+   and q.cognitive_level is not null
 union all
 select 'courses (global)', count(*) from public.igot_courses;
 
