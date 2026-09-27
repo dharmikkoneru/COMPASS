@@ -32,7 +32,7 @@ RATE = "+12%"
 SCENES = [
     ("Title",        0,   9000,
      "What if training knew what you've missed? "
-     "This is COMPASS. Smart India Hackathon, 2026."),
+     "This is COMPASS."),
     ("Problem",      9000,  11000,
      "Thousands of officers train every year. Then they forget it. "
      "Not because they didn't learn — nothing ever told them what to fix next."),
