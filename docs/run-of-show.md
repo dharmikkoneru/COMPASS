@@ -26,7 +26,11 @@ unchanged at **33.3 s** to `/healthz`, and a real browser generation took **35.1
    but if you have been idle, open the Materials page and press *Generate AI quiz* once, off-camera,
    to be certain. Budget **~20 s warm when the model is responsive and ~35 s when it is busy**, and
    ~70 s for the day's first (cold) generation — the model, not the host, is the variable.
-4. Leave the browser zoom at 100% and the window wide enough that the radar and the gap chips are
+4. **Only if you plan to show *Ask your material*:** index one document first. The demo reset ships
+   **zero** indexed passages, so the panel answers "index this material" until someone presses
+   **Index for Q&A** on a material card once. It is idempotent and took **4.2 s** on the deployed
+   build (2 passages, 768 dims). Measured after: a grounded answer in **6.1 s** with citations.
+5. Leave the browser zoom at 100% and the window wide enough that the radar and the gap chips are
    both visible.
 
 **Known-good numbers to expect:** readiness 59%, gaps 4, readiness forecast 59% → 62% (+3) in ~4

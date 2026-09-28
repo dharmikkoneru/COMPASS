@@ -357,12 +357,20 @@ recommendations — verified identical). Findings are folded into §H below.
   in **24.2 s** with the same JSON shape and tag quality — but with `cognitive_level` NULL on every
   row, which is what identified the deployed edge build as behind (§H item 3). **After the redeploy:
   200 in 30.8 s, every question tagged** (`4 Application + 1 Analysis`), so that gap is closed.
-- **Level mix, four samples (worth knowing before promising anything):** FastAPI gave
-  `4 Recall + 1 Application` then `3 Recall + 2 Application`; the redeployed edge gave
-  `4 Application + 1 Analysis`. Every run is scenario-shaped and every question is tagged; the *mix*
-  is not stable at n=5.
-- **A mark of the probe's worth:** it wrote three real quizzes to the shared demo account, and the
-  restore removed all three without touching a single seeded value. Snapshot first, always.
+- **Level mix, five samples (worth knowing before promising anything):** FastAPI gave
+  `4 Recall + 1 Application`, then `3 Recall + 2 Application`, then `all 5 Application`; the
+  redeployed edge gave `4 Application + 1 Analysis`. Every run is scenario-shaped and every question
+  is tagged; the *mix* is not stable at n=5.
+- **The Ask-your-material path answers, too** (checked after the redeploy, since it is the third
+  function that was redeployed). `embed-material` → **200 in 4.2 s, 2 chunks at 768 dims**;
+  `ask-material` → **200 in 6.1 s** on `gemini-3.6-flash` with citations and similarity scores
+  (`0.689`, `0.482`): *"A supervisor must verify 10 percent of the filled schedules [Source 1,
+  Source 2] … The base year for the current series is 2012=100."* The probe deleted its own chunks
+  afterwards, because **the demo reset ships no index at all** (`material_chunks` = 0) — so if the Ask
+  panel is going to be shown, press *Index for Q&A* once on a material card first (idempotent, ~4 s).
+- **A mark of the probe's worth:** the session wrote **five** real quizzes to the shared demo
+  account across its probes — including two after the redeploy — and three `restore` runs removed
+  every one without touching a single seeded value. Snapshot first, always.
 
 ---
 
@@ -415,17 +423,26 @@ live site *worse*, because a 401 from FastAPI does **not** fall back —
 `UNAVAILABLE_STATUS = {408, 425, 429, 502, 503, 504}`. It was fixing both together that removed the
 trap, which is where the live service now stands. Keep that set in mind before narrowing it.
 
-**Now verified rather than asserted: the scenario prompt does produce scenario questions.** Every
-question from all four probes — both transports, before and after the redeploy — reads as a workplace
-decision grounded in the CPI manual ("A field supervisor in an urban centre is planning the workload
-distribution for the month…", "An officer reviewing a newly submitted field report notices…"), and
-the specifics check out against the material: 448 items in 6 groups, 1181 rural villages, base year
-2011=100, CAPI range checks. Tags discriminate well — 4–5 distinct competency tags per quiz, spread
-across Data Quality, Sampling, Field Ops, Official Statistics and Survey Methodology.
+**Now verified rather than asserted: the questions are genuinely grounded in the material.** Every
+question from all five probes — both transports, before and after the redeploy — is a scenario rather
+than a definition ("A supervisor reporting to a Senior Statistical Officer suggests skipping visits to
+sample rural villages…"), and checking each **marked** answer against the source text found **5/5
+correct**: supervisor verification of 10 percent of schedules, `2012=100` as the base year, 448 items
+across **8** groups, and a stratified random sampling design across 500+ urban centres and 1181 rural
+villages — every figure from the manual, none invented. The explanations also name the tempting wrong
+choice and why it fails, which is what makes a question teach instead of test.
 
-**The cognitive-level mix is noisy — tag it, but do not promise a distribution.** Four medium
-5-question generations from the same CPI manual gave: `4 Recall + 1 Application` (FastAPI),
-`3 Recall + 2 Application` (FastAPI), `NULL × 5` (edge, pre-redeploy) and
+⚠️ **Read `correct_idx` before quoting a figure as a source fact.** The distractors are built from
+the material's own numbers, so a base-year question can offer `2011=100` beside `2010=100` while the
+manual says `2012=100`, and an items question can offer "448 items across 6 groups" while the manual
+says **8**. The first draft of this section did exactly that and recorded the wrong group count and
+base year as if they were the manual's. Tags, meanwhile, discriminate well — 4–5 distinct competency
+tags per quiz, spread across Data Quality, Sampling, Field Ops, Official Statistics and Survey
+Methodology.
+
+**The cognitive-level mix is noisy — tag it, but do not promise a distribution.** Five medium
+5-question generations from the same CPI manual gave `4 Recall + 1 Application`, `3 Recall + 2
+Application` and `5 Application` (FastAPI), `NULL × 5` (edge, pre-redeploy) and
 `4 Application + 1 Analysis` (edge, post-redeploy). Since the redeploy every path stores a level and
 the chip renders; *which* levels arrive swings a lot across five questions, and sampling is the only
 honest explanation. Read the deck's "mapped, not just marked" line as *the depth is tagged*, not *the
