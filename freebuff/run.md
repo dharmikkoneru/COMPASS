@@ -304,8 +304,12 @@ uses. **Redeploy `embed-material` and `ask-material`** or the fallback path stay
 ## Resilience and the live demo (Sept 25, 2026)
 
 - **The timed live-demo script is `docs/run-of-show.md`** — the judge path, the measured timings
-  (generation 19.4 s warm, submit 1.65 s, cold start 33.7 s) and a recovery line for every failure
-  mode. Read it before presenting.
+  (generation 19.4 s warm on Sept 25 and 35.1 s on Sept 28, submit 1.65 s, cold start 33.3–33.7 s)
+  and a recovery line for every failure mode. Read it before presenting.
+- **Generation time is Google's to decide, not ours.** The host is the stable half (cold start
+  33.3 s on Sept 28 vs 33.7 s on Sept 25); the model is not — a busy morning means `503 high
+  demand`, extra model retries, and ~35 s where September saw ~20 s. Quote "about twenty seconds, up
+  to forty" and let the seconds counter explain the rest.
 - **The app now warms the AI service itself.** `StatusBanner` pings `GET /healthz` on every route, so
   a slept Render instance boots while the officer reads the dashboard instead of while a judge
   waits. The ~50 s cold start is *named in the UI* rather than shown as a bare spinner. Measured
@@ -325,3 +329,29 @@ uses. **Redeploy `embed-material` and `ask-material`** or the fallback path stay
   exactly as it constrains the app — no service-role key. `status` prints what a judge would see.
   The one-paste SQL in `supabase/guest_setup_one_paste.sql` is still the canonical reset (it also
   repairs the account and its identities); the probe exists for rehearsals, not for judging.
+
+## Live deployment state (Sept 28, 2026)
+
+Re-probed end to end as the guest on the deployed build. Full findings in `BACKLOG.md` §H; the short
+version for anyone about to demo:
+
+- **The primary AI path works, and nothing needs fixing before presenting.** The live bundle ships
+  `VITE_API_BASE_URL=https://compass-api-fm5s.onrender.com` with the fallback enabled; the browser
+  posted to `…/api/ai/generate-quiz` and got **200** in 35.1 s with **no** call to the edge function.
+  Render's CORS accepts the live origin (preflight 200, ACAO echoed) and it validates the guest's
+  Supabase token, so both blockers recorded on Sept 24 are resolved on the service itself, not just
+  in the repo.
+- **Do not switch AI to the edge functions by unsetting `VITE_API_BASE_URL`.** The old "cheaper
+  alternative" reasoning no longer holds now that Render is correct on CORS and validates tokens: the
+  only thing removing it would buy is dependence on the flakier path (one attempt died after 92 s on
+  Google 503s; the retry took 24.2 s).
+- **The edge functions were redeployed from the Supabase dashboard and the gap is closed.** Before it,
+  the deployed `generate-quiz` was one commit behind — scenario framing live, tagging not — so
+  fallback-generated questions arrived without a level chip. Verified after the redeploy: **200 in
+  30.8 s with every question tagged**. **Repeat that check after any future redeploy** — a stored
+  `cognitive_level` is the only build fingerprint readable from the client side. (The CLI here cannot
+  deploy: it is not linked, and `supabase login` needs an interactive personal access token.)
+- **To re-probe later:** sign in as the guest with `python - <<'PY'` over `.freebuff/guest_probe.py`'s
+  `Client`, snapshot first, POST to both `…/api/ai/generate-quiz` and
+  `…/functions/v1/generate-quiz` with the guest's bearer token, then `restore`. Never probe without
+  the snapshot — a single generation writes a real quiz to the shared account.

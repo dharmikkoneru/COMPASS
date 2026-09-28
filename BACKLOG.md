@@ -5,9 +5,14 @@ without re-deriving anything. **Read this before starting work.** Operational pr
 deploy, reset the demo, re-render the video) live in `freebuff/run.md` — this file is the
 "what's next / what's known" list.
 
-Last updated: **2026-09-25**, after the resilience batch (section I), the cognitive-level tagging the
-slide used to only claim (D1, now built) and the human-review claim it now honestly marks as planned
-(D2). Pushed in one batch: Vercel and Render redeploy from git, Netlify stays manual.
+Last updated: **2026-09-28**, after re-probing the live deployment as the guest: the three section H
+blockers are **all closed** — two were already fixed on the deployed Render service, and the third (a
+build-behind edge function) was closed by a dashboard redeploy the same day. The walkthrough
+narration was re-cut and pushed as `78b9b3e`. See the dated record before §H.
+
+Previous update 2026-09-25: the resilience batch (section I), the cognitive-level tagging the slide
+used to only claim (D1, now built) and the human-review claim it now honestly marks as planned (D2).
+Pushed in one batch: Vercel and Render redeploy from git, Netlify stays manual.
 
 Legend: **Done** · **Queued** (decided, next up) · **Ready** (decided, not started) ·
 **Proposed** (needs a decision) · **Don't claim** (out of scope on purpose)
@@ -157,7 +162,9 @@ high-capacity servers (free tier sleeps after ~15 min idle, ~50 s cold start).
   half is impossible by design and stays out of any claim.
 - **E2 · Cold-start killer** *(Done 2026-09-25 — see section I)*. The app pings `/healthz` on load
   and names the cold start in the UI instead of leaving a bare spinner. Measured cold start to work
-  against: **33.7 s**, so a cold first generation costs ~55 s against ~20 s warm.
+  against: **33.3–33.7 s** (re-probed 2026-09-28 and 2026-09-25 respectively — the host is the stable
+  half). Warm generation is *not*: 19.4 s on Sept 25, **35.1 s** on Sept 28, because the model was
+  returning `503 high demand`. Say "twenty seconds, up to forty", not "twenty".
 - **E3 · External uptime ping** *(Proposed)*. A scheduled ping of `/healthz` would make the
   "24/7 monitoring" line literally true.
 
@@ -327,44 +334,107 @@ demo drifted. Worth promoting to `scripts/` if rehearsals become routine.
 
 ---
 
-## H. Live-deployment blockers found 2026-09-24 (post-push verification)
+### Live AI probe, 2026-09-28 — both transports, on the deployed build
 
-Shipping `03692a3` surfaced more than the prompt check: **AI generation is broken on every live
+Re-run against production as the guest, checkpointed first and **restored to the pristine baseline
+afterwards** (3 materials · 3 quizzes · 15 questions · 6 attempts · 8 mastery rows · 5
+recommendations — verified identical). Findings are folded into §H below.
+
+- **What the live bundle actually ships:** `https://compass-api-fm5s.onrender.com` with
+  `fallbackEnabled: true`, i.e. FastAPI is primary and the edge functions are the fallback. The
+  client never fell back once today — the only edge calls in the whole session were the deliberate
+  ones below.
+- **Cold start: 33.3 s to `/healthz` first byte.** The 2026-09-25 dress rehearsal measured 33.7 s, so
+  a slept Render instance costs a stable ~33 s — which is exactly what the batched warm-up exists to
+  absorb.
+- **Judge path, driven in the real browser:** Materials → *Generate AI quiz* on the CPI manual →
+  `POST …/api/ai/generate-quiz → 200` at **35.1 s** (the browser's own
+  `performance.getEntriesByType('resource')` duration, not a stopwatch), **no edge call in the
+  network log**. `OPTIONS … → 200 (Preflight)` first. The quiz landed as *"Consumer Price Index Field
+  Operations and Quality Control Assessment"* and `/quiz/<id>` renders it with `RECALL` +
+  `DATA QUALITY` + `MEDIUM` chips.
+- **The same request sent straight to the edge function** produced an equally valid 5-question quiz
+  in **24.2 s** with the same JSON shape and tag quality — but with `cognitive_level` NULL on every
+  row, which is what identified the deployed edge build as behind (§H item 3). **After the redeploy:
+  200 in 30.8 s, every question tagged** (`4 Application + 1 Analysis`), so that gap is closed.
+- **Level mix, four samples (worth knowing before promising anything):** FastAPI gave
+  `4 Recall + 1 Application` then `3 Recall + 2 Application`; the redeployed edge gave
+  `4 Application + 1 Analysis`. Every run is scenario-shaped and every question is tagged; the *mix*
+  is not stable at n=5.
+- **A mark of the probe's worth:** it wrote three real quizzes to the shared demo account, and the
+  restore removed all three without touching a single seeded value. Snapshot first, always.
+
+---
+
+## H. Live-deployment blockers found 2026-09-24 — re-tested 2026-09-28
+
+Shipping `03692a3` surfaced more than the prompt check: **AI generation was broken on every live
 host, for three independent reasons.** Verified end to end, not inferred.
 
-1. **CORS: Render rejects the real Vercel origin.** Preflight for
-   `Origin: https://compass-tawny-five.vercel.app` answers **400** with no
-   `access-control-allow-origin`. `render.yaml` pinned `ALLOWED_ORIGINS` to localhost + Netlify
-   with a comment saying "add the Vercel URL once the project exists" — never done. **Fixed in the
-   repo** (`render.yaml` + the `config.py` default). In the browser this is invisible as CORS: the
-   OPTIONS fails, the POST becomes `net::ERR_FAILED`, and the app reads that as "API unreachable"
-   and falls back to the edge functions.
-2. **Render cannot fetch the project's signing keys.** Every authenticated endpoint answers
-   `Not authenticated: could not fetch the project's signing keys ([Errno -2] Name or service not
-   known)` — a DNS failure on the Render side, i.e. `SUPABASE_URL` there is a placeholder or typo.
-   `configured: true` only proves the variable is non-empty. **Needs the user** (Render →
-   Environment). The error now names the exact JWKS URL it tried, so this is diagnosable from the
-   response alone instead of needing the dashboard.
-3. **The edge-function fallback fails too.** The deployed `generate-quiz` is stale (its tried-model
-   list starts with `gemini-2.5-flash`, which the repo replaced with `gemini-3.6-flash`), and
-   Google answered `404 … no longer available to new users` for the 2.5 family and
-   `503 … experiencing high demand` for 3.6/3.7/3.8. The 404s are ours to fix (redeploy the
-   function); the 503s are transient and clear on retry.
+**All three are now closed (re-probed 2026-09-28):** two were already fixed on the deployed Render
+service — not merely in the repo — and the third was real but smaller than recorded: the edge
+function was not "stale" in its model list, it was one build behind on tagging, and redeploying it
+from the Supabase dashboard fixed that too. Nothing here blocks the demo, and no environment variable
+is left to set.
 
-**Dangerous interaction to remember:** fixing (1) alone makes the live site *worse*. Today the CORS
-failure pushes every call to the edge fallback; once Render is reachable, its auth failure returns
-**401**, and `UNAVAILABLE_STATUS = {408, 425, 429, 502, 503, 504}` means a 401 does **not** fall
-back — so AI fails hard. Fix `SUPABASE_URL` first, or at the same time.
+1. **CORS — fixed on Render, not just in the repo.** Preflight (`OPTIONS`) for
+   `POST https://compass-api-fm5s.onrender.com/api/ai/generate-quiz` with
+   `Origin: https://compass-tawny-five.vercel.app` now answers **200**, echoing
+   `access-control-allow-origin: https://compass-tawny-five.vercel.app` and
+   `access-control-allow-methods: GET, POST, OPTIONS`. The browser agrees — the real UI logged
+   `OPTIONS … → 200 (Preflight)` before the POST. The old symptom (400, no ACAO, POST becomes
+   `net::ERR_FAILED`, app reads it as "API unreachable" and falls back) is gone.
+2. **Render's signing keys — fixed.** The old symptom was
+   `could not fetch the project's signing keys ([Errno -2] Name or service not known)`, i.e. a
+   placeholder `SUPABASE_URL` there. A real authenticated generation as the guest — the guest's own
+   access token, the guest's own RLS — now returns **200** and the questions land in the database, so
+   Render fetched the JWKS and validated the token. `/healthz` reports `configured: true`.
+3. **The edge fallback: two things wrong, both now fixed by redeploy.** The old note blamed a stale
+   deploy because the tried-model list looked old — that part was **wrong**: those extra names come
+   from `listGenerateContentModels` **discovery**, which has been in the file since the first commit,
+   so the curated `gemini-3.6-flash` name goes first and whatever Google's ListModels returns
+   follows. What *was* true is that the build was behind on tagging:
+   - **Evidence.** Both pre-redeploy edge generations persisted `cognitive_level = NULL` on all five
+     questions, while a FastAPI generation two minutes earlier wrote `Recall`/`Application` into the
+     same table through the same PostgREST schema cache — so the column existed and the tolerant
+     write never fired. The only explanation left was a deployed build with no `cognitive_level` in
+     its response schema: scenario framing (`03692a3`) present, tagging (`0dfbda3`) absent.
+   - **Fixed 2026-09-28:** the three functions (`generate-quiz`, `ask-material`, `embed-material`)
+     were redeployed from the Supabase dashboard. The next edge generation returned **200 in 30.8 s**
+     with **every question tagged** (`4 Application + 1 Analysis`). That tag is the only
+     build-fingerprint readable from the client side, so it is the check to repeat after any future
+     deploy.
+   - **It remains the slower, flakier path.** One attempt died after **92 s** — `gemini-3.6-flash:
+     HTTP 503 (high demand)` twice, `gemini-2.5-flash`/`-lite: HTTP 404 (no longer available to new
+     users)`, several `request did not complete (The signal has been aborted)` — before the platform
+     budget ran out; the retry succeeded in **24.2 s**, and the post-redeploy run in **30.8 s**.
+     Treat it as a fallback that usually works, not one to lean on.
 
-**Still unverified:** whether the new scenario prompt produces scenario questions. Both paths to
-that answer are blocked by the above (Render by auth, the edge function by the stale deploy), so
-the prompt is verified only as code — its assertions pass, and both generators carry identical
-text. First real generation after the two fixes is the test.
+**Dangerous interaction to remember (still true, now moot):** fixing (1) alone would have made the
+live site *worse*, because a 401 from FastAPI does **not** fall back —
+`UNAVAILABLE_STATUS = {408, 425, 429, 502, 503, 504}`. It was fixing both together that removed the
+trap, which is where the live service now stands. Keep that set in mind before narrowing it.
 
-**Cheaper alternative worth considering (this is F3):** unset `VITE_API_BASE_URL` on Vercel so the
-site uses the edge functions, exactly as Netlify already does. That removes Render from the demo
-path entirely — one env var, no CORS, no JWKS — at the cost of the "FastAPI backend" claim being
-unused during judging.
+**Now verified rather than asserted: the scenario prompt does produce scenario questions.** Every
+question from all four probes — both transports, before and after the redeploy — reads as a workplace
+decision grounded in the CPI manual ("A field supervisor in an urban centre is planning the workload
+distribution for the month…", "An officer reviewing a newly submitted field report notices…"), and
+the specifics check out against the material: 448 items in 6 groups, 1181 rural villages, base year
+2011=100, CAPI range checks. Tags discriminate well — 4–5 distinct competency tags per quiz, spread
+across Data Quality, Sampling, Field Ops, Official Statistics and Survey Methodology.
+
+**The cognitive-level mix is noisy — tag it, but do not promise a distribution.** Four medium
+5-question generations from the same CPI manual gave: `4 Recall + 1 Application` (FastAPI),
+`3 Recall + 2 Application` (FastAPI), `NULL × 5` (edge, pre-redeploy) and
+`4 Application + 1 Analysis` (edge, post-redeploy). Since the redeploy every path stores a level and
+the chip renders; *which* levels arrive swings a lot across five questions, and sampling is the only
+honest explanation. Read the deck's "mapped, not just marked" line as *the depth is tagged*, not *the
+questions are all higher-order* — and in the demo, promise the chip and then read what it says.
+
+**F3 is still the wrong move.** When this section was written, unsetting `VITE_API_BASE_URL` so the
+edge functions serve AI looked like the low-risk path. With both transports tagging, Render correct
+on CORS, validating tokens and answering in 30–43 s warm, there is nothing left to gain by removing
+the primary — only the measurably flakier path left to depend on. **Leave `VITE_API_BASE_URL` set.**
 
 ---
 
